@@ -452,7 +452,7 @@ class TariffEngine:
                 return
             full = f"{carrier} {label.lower()} surcharge"
             if remark:
-                full += f" - {remark}"
+                full += f" - {remark.lstrip('- ')}"
             if commodity_only:
                 # e.g. "commercial surcharge ... (Only for FRUITS, VEG, PER, CHR)" - not general cargo
                 return
