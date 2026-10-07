@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+
+<h2 id="surcharges">Network surcharges</h2>
+<p class="muted small">Surcharges from the tariff notes / footnotes that apply across many routes. Route- and flight-specific
+  surcharges are read from the rate files automatically – don't list them here. <b>Applies to</b>: All, Origin, Destination or Route
+  (station like <code>BOM</code>, route like <code>DEL-COK</code>). Leave <b>Valid to</b> blank for "until further notice".
+  Changes apply immediately.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Carrier</th><th>Applies to</th><th>Station / route</th><th class="n">₹/kg</th><th>Valid from</th><th>Valid to</th>
+    <th>Label</th><th>Reason / source</th><th>Active</th><th></th></tr></thead>
+  <tbody>
+  {% for s in surcharges + [{'SurchargeID': '', 'Carrier': 'IndiGo', 'AppliesTo': 'All', 'Active': 1}] %}
+    <tr>
+      
+        <td><input form="sf-{{ loop.index }}" type="hidden" name="SurchargeID" value="{{ s.SurchargeID }}"><select form="sf-{{ loop.index }}" name="Carrier">{% for c in carriers %}<option {{ 'selected' if c == s.Carrier }}>{{ c }}</option>{% endfor %}</select></td>
+        <td><select form="sf-{{ loop.index }}" name="AppliesTo">{% for a in ['All','Origin','Destination','Route'] %}<option {{ 'selected' if a == s.AppliesTo }}>{{ a }}</option>{% endfor %}</select></td>
+        <td><input form="sf-{{ loop.index }}" name="Station" value="{{ s.Station or '' }}" size="8"></td>
+        <td><input form="sf-{{ loop.index }}" name="RatePerKg" value="{{ s.RatePerKg|num if s.RatePerKg is not none }}" size="4" inputmode="decimal" {{ 'required' if s.SurchargeID }}></td>
+        <td><input form="sf-{{ loop.index }}" type="date" name="ValidFrom" value="{{ (s.ValidFrom or '')[:10] }}"></td>
+        <td><input form="sf-{{ loop.index }}" type="date" name="ValidTo" value="{{ (s.ValidTo or '')[:10] }}"></td>
+        <td><input form="sf-{{ loop.index }}" name="Label" value="{{ s.Label or '' }}" size="7"></td>
+        <td><input form="sf-{{ loop.index }}" name="Reason" value="{{ s.Reason or '' }}" size="30"></td>
+        <td><input form="sf-{{ loop.index }}" type="checkbox" name="Active" value="1" {{ 'checked' if s.Active }}></td>
+        <td class="nowrap">
+          <button form="sf-{{ loop.index }}" name="action" value="save">{{ 'Save' if s.SurchargeID else 'Add' }}</button>
+          {% if s.SurchargeID %}<button form="sf-{{ loop.index }}" name="action" value="delete" class="danger" onclick="return confirm('Delete this surcharge?')">✕</button>{% endif %}
+          {% if s.SurchargeID and s.ValidTo and s.ValidTo[:10] < today %}<span class="badge b-none">expired</span>{% endif %}
+        <form id="sf-{{ loop.index }}" method="post" action="{{ url_for('main.surcharge_save') }}"></form></td>
+    
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+
+<h2 id="airlines">Airlines &amp; add-on costs</h2>
+<p class="muted small"><b>Tariff</b> links an airline code from the schedule to its loaded rate files. <b>Add-on</b> is your own
+  per-kg cost on top of the tariff (X-ray, TSP, handling…) and is included in CPKG.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Code</th><th>Name</th><th>Tariff</th><th class="n">Add-on ₹/kg</th><th>Includes</th><th></th></tr></thead>
+  <tbody>
+  {% for a in airlines + [{'Code': ''}] %}
+    <tr>
+      <td>{% if a.Code %}<b>{{ a.Code }}</b><input form="af-{{ loop.index }}" type="hidden" name="Code" value="{{ a.Code }}">{% else %}<input form="af-{{ loop.index }}" name="Code" size="9" placeholder="NEWCODE">{% endif %}</td>
+      <td><input form="af-{{ loop.index }}" name="Name" value="{{ a.Name or '' }}"></td>
+      <td><select form="af-{{ loop.index }}" name="TariffCarrier"><option value="">(none loaded)</option>{% for c in carriers %}<option {{ 'selected' if c == a.TariffCarrier }}>{{ c }}</option>{% endfor %}</select></td>
+      <td><input form="af-{{ loop.index }}" name="AddOnPerKg" value="{{ a.AddOnPerKg|num if a.AddOnPerKg is not none }}" size="4" inputmode="decimal"></td>
+      <td><input form="af-{{ loop.index }}" name="AddOnIncludes" value="{{ a.AddOnIncludes or '' }}" size="30"></td>
+      <td class="nowrap"><button form="af-{{ loop.index }}" name="action" value="save">{{ 'Save' if a.Code else 'Add' }}</button>
+        {% if a.Code %}<button form="af-{{ loop.index }}" name="action" value="delete" class="danger" onclick="return confirm('Delete airline {{ a.Code }}?')">✕</button>{% endif %}<form id="af-{{ loop.index }}" method="post" action="{{ url_for('main.airline_save') }}"></form></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+
+<h2 id="stations">Stations</h2>
+<p class="muted small"><b>Hub</b> stations appear in the Origin drop-down. <b>Tariff code</b> is only needed when the rate files use a
+  different code from the schedule (e.g. schedule <code>TVM</code>, tariffs <code>TRV</code>).</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Code</th><th>Name</th><th>Hub</th><th>Tariff code</th><th></th></tr></thead>
+  <tbody>
+  {% for s in stations + [{'Code': ''}] %}
+    <tr>
+      <td>{% if s.Code %}<b>{{ s.Code }}</b><input form="stf-{{ loop.index }}" type="hidden" name="Code" value="{{ s.Code }}">{% else %}<input form="stf-{{ loop.index }}" name="Code" size="5" placeholder="XXX">{% endif %}</td>
+      <td><input form="stf-{{ loop.index }}" name="Name" value="{{ s.Name or '' }}"></td>
+      <td><input form="stf-{{ loop.index }}" type="checkbox" name="IsHub" value="1" {{ 'checked' if s.IsHub }}></td>
+      <td><input form="stf-{{ loop.index }}" name="TariffCode" value="{{ s.TariffCode or '' }}" size="5"></td>
+      <td class="nowrap"><button form="stf-{{ loop.index }}" name="action" value="save">{{ 'Save' if s.Code else 'Add' }}</button>
+        {% if s.Code %}<button form="stf-{{ loop.index }}" name="action" value="delete" class="danger" onclick="return confirm('Delete station {{ s.Code }}?')">✕</button>{% endif %}<form id="stf-{{ loop.index }}" method="post" action="{{ url_for('main.station_save') }}"></form></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endblock %}

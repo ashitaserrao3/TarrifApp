@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge, days, product, station_options with context %}
+{% block title %}All flights{% endblock %}
+{% block content %}
+<h1>All flights &amp; their linked rates</h1>
+<form class="panel filters" method="get">
+  <label>Origin<select name="origin">{{ station_options(hubs, f.origin, 'All') }}</select></label>
+  <label>Destination<select name="dest">{{ station_options(stations, f.dest, 'All') }}</select></label>
+  <label>Airline<select name="airline"><option value="">All</option>
+    {% for a in airlines %}<option {{ 'selected' if a == f.airline }}>{{ a }}</option>{% endfor %}</select></label>
+  <label>Status<select name="status"><option value="">All</option>
+    {% for s in [STATUS_OK, STATUS_CHECK, STATUS_NO_RATE, STATUS_NO_TARIFF] %}<option value="{{ s }}" {{ 'selected' if s == f.status }}>{{ s }}</option>{% endfor %}</select></label>
+  <label>Flight no.<input name="q" value="{{ q }}" placeholder="e.g. 6E449" size="9"></label>
+  <label>Rates as of<input type="date" name="date" value="{{ as_of.isoformat() }}"></label>
+  <button>Filter</button>
+  <a class="btn secondary" href="{{ url_for('main.flights_csv', date=as_of.isoformat()) }}">Download CSV</a>
+</form>
+<p class="muted">{{ results|length }} of {{ total }} flights shown ·
+  {% for s, n in counts.most_common() %}{{ s }}: {{ n }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Route</th><th>Airline</th><th>Flight</th><th>ETD</th><th class="hide-sm">Days</th><th>Product</th>
+    <th class="n">Min</th><th class="n">N</th><th class="n">45+</th><th class="n">100+</th><th class="n hide-sm">300+</th>
+    <th class="n hide-sm">500+</th><th class="n hide-sm">1000+</th><th>Surcharges</th><th class="n">CPKG 45+</th><th>Status</th><th class="hide-sm">How matched</th></tr></thead>
+  <tbody>
+  {% for r in results %}
+    <tr>
+      <td class="nowrap"><a href="{{ url_for('main.dashboard', origin=r.flight.Origin, dest=r.flight.Destination, date=as_of.isoformat()) }}">{{ r.flight.Origin }}–{{ r.flight.Destination }}</a></td>
+      <td>{{ r.flight.Airline }}</td><td class="nowrap">{{ r.flight.FlightNo }}</td><td>{{ r.flight.DepTime }}</td>
+      <td class="hide-sm">{{ days(r.flight) }}</td><td>{{ product(r) }}</td>
+      <td class="n">{{ r.rates.Min|inr }}</td><td class="n">{{ r.rates.N|num }}</td><td class="n">{{ r.rates['45']|num }}</td>
+      <td class="n">{{ r.rates['100']|num }}</td><td class="n hide-sm">{{ r.rates['300']|num }}</td>
+      <td class="n hide-sm">{{ r.rates['500']|num }}</td><td class="n hide-sm">{{ r.rates['1000']|num }}</td>
+      <td class="nowrap small">{{ r.surcharge_summary }}</td>
+      <td class="n">{{ r.cpkg(45)[0]|num }}</td>
+      <td>{{ status_badge(r.status) }}</td>
+      <td class="small muted wrap-text hide-sm">{{ r.match_note }}{% if r.condition and r.condition.text %}<br><i>{{ r.condition.text|truncate(90) }}</i>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

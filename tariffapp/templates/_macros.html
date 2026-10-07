@@ -1,0 +1,19 @@
+{% macro status_badge(s) -%}
+  {%- if s == STATUS_OK -%}<span class="badge b-ok">OK</span>
+  {%- elif s == STATUS_CHECK -%}<span class="badge b-check">Check</span>
+  {%- elif s == STATUS_NO_RATE -%}<span class="badge b-bad">No rate</span>
+  {%- else -%}<span class="badge b-none">No tariff</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro days(f) -%}
+<span class="days">{% for d in DAYS %}{% if f[d] %}{{ d[0] }}{% else %}<span class="off">·</span>{% endif %}{% endfor %}</span>
+{%- endmacro %}
+
+{% macro product(r) -%}
+  {%- if r.product %}<span class="badge b-prod">{{ r.product }}</span>{% endif -%}
+{%- endmacro %}
+
+{% macro station_options(stations, selected, blank=None) -%}
+  {% if blank %}<option value="">{{ blank }}</option>{% endif %}
+  {% for s in stations %}<option value="{{ s.Code }}" {{ 'selected' if s.Code == selected }}>{{ s.Code }}{% if s.Name %} – {{ s.Name }}{% endif %}</option>{% endfor %}
+{%- endmacro %}

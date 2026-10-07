@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Get started{% endblock %}
+{% block content %}
+<h1>Get started</h1>
+<div class="panel">
+  <p>No flight schedule loaded yet. To get going:</p>
+  <ol>
+    <li><a href="{{ url_for('main.uploads') }}">Upload</a> the flight-schedule workbook (the one with the <b>Raw Data</b> sheet).
+        Its station list, add-on rates and network surcharges are imported too.</li>
+    <li>Upload your Air India and IndiGo rate-list files (as many cycles as you have – history is kept).</li>
+    <li>Come back here to look up any route.</li>
+  </ol>
+  <p class="muted small">Already have the old CargoRates database? Import all its history in one go with
+    <code>flask --app tariffapp import-legacy path\to\CargoRates.accdb</code> (see README).</p>
+</div>
+{% endblock %}
