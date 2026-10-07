@@ -51,15 +51,16 @@ def load_rate_file(conn: sqlite3.Connection, filepath: str, filename: str = None
     result = {"file": fname, "status": None, "carrier": None, "effective_date": None,
               "rows": 0, "warnings": [], "message": ""}
 
+    eff_date = effective_date or parsers.parse_effective_date(fname)
+    result["effective_date"] = eff_date
+
     if not force and already_loaded(conn, fname):
         result.update(status="skipped", message="Already loaded - skipped.")
         return result
 
-    eff_date = effective_date or parsers.parse_effective_date(fname)
     if eff_date is None:
         result["warnings"].append("Could not find an effective date in the filename.")
     eff = _iso(eff_date)
-    result["effective_date"] = eff_date
 
     try:
         wb = openpyxl.load_workbook(filepath, read_only=True)

@@ -1,0 +1,9 @@
+[theme]
+primaryColor = "#1f5fbf"
+
+[server]
+# Rate lists are a few MB each; leave room for the schedule workbook too.
+maxUploadSize = 100
+
+[browser]
+gatherUsageStats = false

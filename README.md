@@ -1,6 +1,7 @@
 # Cargo Tariffs — air cargo rate lookup web app
 
-A small web app that replaces the *CargoRates* Access database plus the
+A small web app (with two interchangeable front ends: **Streamlit** and
+**Flask**) that replaces the *CargoRates* Access database plus the
 *ATC/AOC Flight Schedule* Excel workbook. You upload the Air India and IndiGo
 domestic rate lists as they arrive (every ~15 days). The app keeps every
 cycle, links every scheduled flight to the rate that applies to it, and shows
@@ -9,6 +10,8 @@ the **cost per kg (CPKG)** for any route:
 > CPKG = tariff rate + surcharges + your add-on (X-ray / TSP / handling)
 
 ## What's in it
+
+Pages (the same in both front ends):
 
 | Page | What it does |
 |---|---|
@@ -58,11 +61,40 @@ You need Python 3.10 or newer.
 python -m venv .venv
 .venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-python run.py
 ```
 
-Open http://localhost:5000. To let colleagues on the same network use it, run
-`python run.py --host 0.0.0.0` and share `http://<your-pc-name>:5000`.
+Then start **either** front end. Both have the same pages and use the same
+database, so you can switch between them freely:
+
+```bash
+streamlit run streamlit_app.py    # Streamlit: opens http://localhost:8501
+python run.py                     # Flask:     http://localhost:5000
+```
+
+To let colleagues on the same network use it, share
+`http://<your-pc-name>:8501` (Streamlit listens on the network by default),
+or start Flask with `python run.py --host 0.0.0.0` and share
+`http://<your-pc-name>:5000`.
+
+### Streamlit vs Flask
+
+* **Streamlit** (`streamlit_app.py`): quickest to run and to change, with
+  sortable and searchable tables, and settings edited like a spreadsheet
+  (add, edit and delete rows, then *Save*). Can be hosted free on
+  Streamlit Community Cloud (see below).
+* **Flask** (`run.py`): a classic web app. It loads fast with many users,
+  has links that can be bookmarked or shared for any route or date, and runs
+  on any ordinary web server.
+
+### Hosting the Streamlit app on Streamlit Community Cloud
+
+Push this repo to GitHub, then at https://share.streamlit.io create an app
+pointing at `streamlit_app.py`. **Be aware:** Community Cloud doesn't keep
+files between restarts. The SQLite database is wiped whenever the app
+restarts or is redeployed, so you would have to re-upload the schedule and
+rate files each time. For a permanent shared copy, run it on an office PC or
+server instead, or ask for the database to be moved to a hosted one
+(e.g. Postgres).
 
 The data is kept in a single SQLite file, `instance/tariff.sqlite`. Back up
 that file and you've backed up everything. To keep it somewhere else, set the
@@ -105,7 +137,8 @@ flask --app tariffapp import-legacy CargoRates.accdb
 ## Project layout
 
 ```
-run.py                     start the app
+streamlit_app.py           Streamlit front end
+run.py                     Flask front end
 tariffapp/
   __init__.py              app factory
   schema.py                database tables (the CargoRates rate tables + schedule/settings tables)
@@ -114,7 +147,9 @@ tariffapp/
   etl/loader.py            loads a parsed file into the database
   importers.py             schedule workbook + legacy database import
   linker.py                flight → rate matching, surcharges, CPKG (replaces link_rates.py)
-  views.py                 web pages
+  queries.py               read-side queries shared by both front ends
+  settings_store.py        validated saves for the Settings tables
+  views.py                 Flask pages
   templates/, static/      HTML + CSS (Chart.js is bundled under static/vendor)
 tests/                     pytest suite: python -m pytest
 ```

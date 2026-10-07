@@ -3,8 +3,6 @@
 import os
 import sqlite3
 
-from flask import current_app, g
-
 from .schema import build_schema_sql
 
 DEFAULT_AIRLINES = [
@@ -37,12 +35,17 @@ def init_schema(conn: sqlite3.Connection):
 
 
 def get_db() -> sqlite3.Connection:
+    """Per-request connection for the Flask app."""
+    from flask import current_app, g
+
     if "db" not in g:
         g.db = connect(current_app.config["DATABASE"])
     return g.db
 
 
 def close_db(_exc=None):
+    from flask import g
+
     db = g.pop("db", None)
     if db is not None:
         db.close()

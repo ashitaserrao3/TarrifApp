@@ -1,5 +1,10 @@
-Flask>=3.0
 openpyxl>=3.1
+# Streamlit front end:  streamlit run streamlit_app.py
+streamlit>=1.46
+pandas>=2.0
+altair>=5.0
+# Flask front end:  python run.py
+Flask>=3.0
 waitress>=3.0
 # Only needed to import an existing Access (.accdb) database on Windows:
 pyodbc>=4.0 ; sys_platform == "win32"

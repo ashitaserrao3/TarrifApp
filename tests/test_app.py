@@ -7,7 +7,8 @@ from tariffapp.etl.loader import delete_batch, load_rate_file
 
 def test_loader_skips_reload_and_delete_cascades(loaded, tmp_path):
     f = tmp_path / "8.1 6E Eff. 16th Aug 2026.xlsx"
-    assert load_rate_file(loaded, str(f))["status"] == "skipped"
+    skipped = load_rate_file(loaded, str(f))
+    assert skipped["status"] == "skipped" and str(skipped["effective_date"]) == "2026-08-16"
     bid = loaded.execute("SELECT BatchID FROM LoadBatches WHERE SourceFileName = ?", (f.name,)).fetchone()[0]
     assert loaded.execute("SELECT COUNT(*) FROM IndiGo_GCR WHERE BatchID = ?", (bid,)).fetchone()[0] == 3
     assert loaded.execute("SELECT COUNT(*) FROM IndiGo_Footnotes WHERE BatchID = ?", (bid,)).fetchone()[0] == 1
