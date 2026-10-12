@@ -1,16 +1,11 @@
 # ATC/AOC Flight Schedule — live in the browser
 
-Your *ATC/AOC Flight Schedule* workbook as an interactive web app. The
-**Dashboard** tab looks and works like the Dashboard sheet: pick **Origin**
-and **Destination** from the yellow drop-downs to see the route, weekly
-flights, flight count, status, and every flight with its product, ETD and
+The **Dashboard** sheet of your *ATC/AOC Flight Schedule* workbook as an
+interactive web page. It looks and works like the sheet: pick **Origin** and
+**Destination** from the yellow drop-downs to see the route, weekly flights,
+flight count, status, and every flight with its product, ETD and
 **CPKG (₹/kg) at 45+ and 100+ kg**. Hover a CPKG value to see its breakdown
 (tariff + surcharge + add-on).
-
-The workbook's other sheets are tabs next to it, computed live from the
-loaded schedule and rate files. Each one can be sorted and searched:
-**Add-on Rates, Raw Data, OD Pair Summary, Network Surcharges, Flight Rates,
-Rate Exceptions.**
 
 Rates come from your Air India and IndiGo rate files, matched to each flight
 the same way the workbook's *Flight Rates* sheet does (all 1,630 flights
@@ -114,7 +109,7 @@ all 1,630 flights.
 ## Project layout
 
 ```
-streamlit_app.py       the app (Dashboard + sheet tabs)
+streamlit_app.py       the app (the Dashboard sheet)
 manage.py              data commands (sync, load-rates, import-schedule, import-legacy)
 data/                  your schedule workbook and rate files (see data/README.md)
 tariffapp/

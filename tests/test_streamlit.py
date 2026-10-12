@@ -1,4 +1,4 @@
-"""The Excel-style app: the Dashboard sheet and the workbook's other sheets as tabs."""
+"""The Excel-style app: the workbook's Dashboard sheet, live."""
 
 import os
 import re
@@ -8,8 +8,6 @@ import pytest
 AppTest = pytest.importorskip("streamlit.testing.v1").AppTest
 
 APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "streamlit_app.py")
-SHEETS = ["Dashboard", "Add-on Rates", "Raw Data", "OD Pair Summary", "Network Surcharges", "Flight Rates",
-          "Rate Exceptions"]
 
 
 def run(origin=None, dest=None, **query):
@@ -44,11 +42,11 @@ def test_empty_database(db_path):
     assert any("No data yet" in i.value for i in at.info)
 
 
-def test_tabs_match_the_workbook_sheets(loaded):
+def test_only_the_dashboard_sheet_is_shown(loaded):
     at = run()
     assert not at.exception, at.exception
-    assert [t.label for t in at.tabs] == SHEETS
-    assert len(at.dataframe) >= 5  # every sheet tab renders its table
+    assert len(at.tabs) == 0 and len(at.dataframe) == 0
+    assert "FLIGHT &nbsp;SCHEDULE" in sheet_html(at)
 
 
 def test_dashboard_matches_excel_layout_and_values(loaded):

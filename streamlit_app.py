@@ -3,9 +3,8 @@ ATC/AOC Flight Schedule - the Excel workbook, live in the browser.
 
     streamlit run streamlit_app.py
 
-The Dashboard tab reproduces the workbook's Dashboard sheet (pick Origin and
-Destination, see every flight with its CPKG); the other tabs are the
-workbook's other sheets, computed live from the loaded schedule and rate
+Shows the workbook's Dashboard sheet: pick Origin and Destination and see
+every flight with its CPKG, computed live from the loaded schedule and rate
 files.
 
 Data comes from the data/ folder (synced automatically - see data/README.md).
@@ -21,12 +20,10 @@ import html
 import os
 import re
 
-import pandas as pd
 import streamlit as st
 
 from tariffapp import database_path, db, queries, sync
-from tariffapp.importers import DAYS
-from tariffapp.linker import STATUS_CHECK, STATUS_NO_RATE, STATUS_NO_TARIFF, STATUS_OK, TariffEngine
+from tariffapp.linker import STATUS_CHECK, STATUS_NO_RATE, STATUS_NO_TARIFF, TariffEngine
 
 st.set_page_config(page_title="Flight Schedule", page_icon="✈", layout="wide")
 
@@ -62,7 +59,6 @@ SHEET_CSS = f"""
 .xl-table td.muted {{ color: #808080; }}
 .xl-table sup {{ color: #9C5700; font-size: 10px; font-weight: 400; }}
 .xl-note {{ color: {GREY_TEXT}; font-size: 11px; margin-top: 10px; }}
-.xl-sheet-head {{ color: #fff; font-weight: 700; padding: 6px 10px; margin-bottom: 6px; border-radius: 2px; }}
 </style>
 """
 
@@ -133,26 +129,6 @@ def sync_data(signature):
         return sync.sync_data_folder(c)
     finally:
         c.close()
-
-
-def show_sheet(df, height=None, **config):
-    """Show a sheet's table the way Excel does: empty cells blank (not 'None'), whole numbers without
-    decimals, numbers right-aligned."""
-    def fmt(v):
-        if v is None or (isinstance(v, float) and pd.isna(v)):
-            return ""
-        if isinstance(v, float):
-            return f"{v:g}" if v == int(v) else f"{v:.2f}"
-        return str(v)
-    numeric = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
-    cfg = {c: st.column_config.TextColumn(c, alignment="right") for c in numeric}
-    cfg.update(config)
-    kwargs = {"height": height} if height else {}
-    st.dataframe(df.map(fmt), hide_index=True, width="stretch", column_config=cfg, **kwargs)
-
-
-def sheet_heading(text, colour):
-    st.html(SHEET_CSS + f'<div class="xl xl-sheet-head" style="background:{colour}">{esc(text)}</div>')
 
 
 conn = get_conn()
@@ -231,186 +207,90 @@ eng = TariffEngine(conn, today)
 names = {s["Code"]: s["Name"] or "" for s in stations}
 hub_codes = [s["Code"] for s in hubs] or list(names)
 all_codes = list(names)
-airline_name = {code: a.get("Name") or code for code, a in eng.airlines.items()}
 
-tabs = st.tabs(["Dashboard", "Add-on Rates", "Raw Data", "OD Pair Summary", "Network Surcharges", "Flight Rates",
-                "Rate Exceptions"])
+if not ss.get("_from_link"):  # a shared link like ?from=DEL&to=BOM opens that route once per session
+    ss["_from_link"] = True
+    if st.query_params.get("from", "").upper() in hub_codes:
+        ss["origin"] = st.query_params["from"].upper()
+    if st.query_params.get("to", "").upper() in all_codes:
+        ss["dest"] = st.query_params["to"].upper()
+if ss.get("origin") not in hub_codes:
+    ss["origin"] = "DEL" if "DEL" in hub_codes else hub_codes[0]
+if ss.get("dest") not in all_codes:
+    ss["dest"] = "CJB" if "CJB" in all_codes else all_codes[0]
 
-# ---------------------------------------------------------------------------
-# Dashboard sheet
-# ---------------------------------------------------------------------------
+st.html(SHEET_CSS + WIDGET_CSS + '<div class="xl xl-title">✈&nbsp; FLIGHT &nbsp;SCHEDULE</div>')
+c = st.columns([1.1, 1.1, 2, 1.4, 1.1, 2], vertical_alignment="center")
+c[0].html('<div class="xl xl-label">Origin:</div>')
+origin = c[1].selectbox("Origin", hub_codes, key="origin", label_visibility="collapsed")
+c[2].html(f'<div class="xl xl-name">{esc(names.get(origin))}</div>')
+c[3].html('<div class="xl xl-label">Destination:</div>')
+dest = c[4].selectbox("Destination", all_codes, key="dest", label_visibility="collapsed")
+c[5].html(f'<div class="xl xl-name">{esc(names.get(dest))}</div>')
+st.query_params.from_dict({"from": origin, "to": dest})
 
-with tabs[0]:
-    if not ss.get("_from_link"):  # a shared link like ?from=DEL&to=BOM opens that route once per session
-        ss["_from_link"] = True
-        if st.query_params.get("from", "").upper() in hub_codes:
-            ss["origin"] = st.query_params["from"].upper()
-        if st.query_params.get("to", "").upper() in all_codes:
-            ss["dest"] = st.query_params["to"].upper()
-    if ss.get("origin") not in hub_codes:
-        ss["origin"] = "DEL" if "DEL" in hub_codes else hub_codes[0]
-    if ss.get("dest") not in all_codes:
-        ss["dest"] = "CJB" if "CJB" in all_codes else all_codes[0]
+flights = [dict(r) for r in conn.execute(
+    "SELECT * FROM Flights WHERE Origin=? AND Destination=? ORDER BY FlightID", (origin, dest))]
+results = eng.price_all(flights) if origin != dest else []
+weekly = sum(queries.weekly_frequency(r.flight) for r in results)
+status = "SAME CITY" if origin == dest else ("ACTIVE" if weekly else "NO SERVICE")
 
-    st.html(SHEET_CSS + WIDGET_CSS + '<div class="xl xl-title">✈&nbsp; FLIGHT &nbsp;SCHEDULE</div>')
-    c = st.columns([1.1, 1.1, 2, 1.4, 1.1, 2], vertical_alignment="center")
-    c[0].html('<div class="xl xl-label">Origin:</div>')
-    origin = c[1].selectbox("Origin", hub_codes, key="origin", label_visibility="collapsed")
-    c[2].html(f'<div class="xl xl-name">{esc(names.get(origin))}</div>')
-    c[3].html('<div class="xl xl-label">Destination:</div>')
-    dest = c[4].selectbox("Destination", all_codes, key="dest", label_visibility="collapsed")
-    c[5].html(f'<div class="xl xl-name">{esc(names.get(dest))}</div>')
-    st.query_params.from_dict({"from": origin, "to": dest})
+ig, ai = eng.batch("IndiGo"), eng.batch("Air India")
+rates_line = (f"Rates: IndiGo eff. {dmy(ig['EffectiveDate']) if ig else '–'}  |  "
+              f"Air India eff. {dmy(ai['EffectiveDate']) if ai else '–'}  |  Linked {dmy(today)}")
+msg = {"SAME CITY": "⚠&nbsp; Please select two different cities as Origin and Destination.",
+       "NO SERVICE": "✈&nbsp; No nonstop flights currently operate on this route. "
+                     "Please try a different Origin / Destination combination."}.get(status, "")
 
-    flights = [dict(r) for r in conn.execute(
-        "SELECT * FROM Flights WHERE Origin=? AND Destination=? ORDER BY FlightID", (origin, dest))]
-    results = eng.price_all(flights) if origin != dest else []
-    weekly = sum(queries.weekly_frequency(r.flight) for r in results)
-    status = "SAME CITY" if origin == dest else ("ACTIVE" if weekly else "NO SERVICE")
+rows_html = []
+for r in results:
+    f = r.flight
+    if r.status == STATUS_NO_TARIFF:
+        product, pcls = "No tariff", "c muted"
+    elif r.status == STATUS_NO_RATE:
+        product, pcls = "No rate", "c muted"
+    else:
+        product, pcls = r.product or "", "c check" if r.status == STATUS_CHECK else "c"
+    cells = []
+    for brk in (45, 100):
+        v, used = r.cpkg(brk)
+        if v is None:
+            cells.append('<td class="cpkg"></td>')
+            continue
+        rate, _ = r.rate_at(brk)
+        tip = (f"{num(rate)} tariff ({used}) + {num(r.surcharge_total)} surcharge "
+               f"[{r.surcharge_summary or 'none'}] + {num(r.addon or 0)} add-on")
+        mark = f"<sup>{used}</sup>" if used != f"{brk}+" else ""
+        cells.append(f'<td class="cpkg" title="{esc(tip)}">{num(v)}{mark}</td>')
+    rows_html.append(
+        f"<tr><td>{esc(f['Airline'])}</td><td class='c'>{esc(f['FlightNo'])}</td>"
+        f"<td class='{pcls}' title='{esc(r.match_note)}'>{esc(product)}</td>"
+        f"<td class='c'>{esc(f['DepTime'])}</td>{''.join(cells)}</tr>")
 
-    ig, ai = eng.batch("IndiGo"), eng.batch("Air India")
-    rates_line = (f"Rates: IndiGo eff. {dmy(ig['EffectiveDate']) if ig else '–'}  |  "
-                  f"Air India eff. {dmy(ai['EffectiveDate']) if ai else '–'}  |  Linked {dmy(today)}")
-    msg = {"SAME CITY": "⚠&nbsp; Please select two different cities as Origin and Destination.",
-           "NO SERVICE": "✈&nbsp; No nonstop flights currently operate on this route. "
-                         "Please try a different Origin / Destination combination."}.get(status, "")
-
-    rows_html = []
-    for r in results:
-        f = r.flight
-        if r.status == STATUS_NO_TARIFF:
-            product, pcls = "No tariff", "c muted"
-        elif r.status == STATUS_NO_RATE:
-            product, pcls = "No rate", "c muted"
-        else:
-            product, pcls = r.product or "", "c check" if r.status == STATUS_CHECK else "c"
-        cells = []
-        for brk in (45, 100):
-            v, used = r.cpkg(brk)
-            if v is None:
-                cells.append('<td class="cpkg"></td>')
-                continue
-            rate, _ = r.rate_at(brk)
-            tip = (f"{num(rate)} tariff ({used}) + {num(r.surcharge_total)} surcharge "
-                   f"[{r.surcharge_summary or 'none'}] + {num(r.addon or 0)} add-on")
-            mark = f"<sup>{used}</sup>" if used != f"{brk}+" else ""
-            cells.append(f'<td class="cpkg" title="{esc(tip)}">{num(v)}{mark}</td>')
-        rows_html.append(
-            f"<tr><td>{esc(f['Airline'])}</td><td class='c'>{esc(f['FlightNo'])}</td>"
-            f"<td class='{pcls}' title='{esc(r.match_note)}'>{esc(product)}</td>"
-            f"<td class='c'>{esc(f['DepTime'])}</td>{''.join(cells)}</tr>")
-
-    route = f"{esc(names.get(origin) or origin)} ({origin})&nbsp; → &nbsp;{esc(names.get(dest) or dest)} ({dest})"
-    table = ""
-    if rows_html:
-        table = f"""
+route = f"{esc(names.get(origin) or origin)} ({origin})&nbsp; → &nbsp;{esc(names.get(dest) or dest)} ({dest})"
+table = ""
+if rows_html:
+    table = f"""
 <div class="xl-wrap"><table class="xl-table">
   <thead>
-    <tr><th rowspan="2">AIRLINE</th><th rowspan="2">FLT NO.</th><th rowspan="2">PRODUCT</th><th rowspan="2">ETD</th>
-        <th class="cpkg" colspan="2">CPKG &nbsp;(₹/kg)</th></tr>
-    <tr><th class="cpkg">45+ kg</th><th class="cpkg">100+ kg</th></tr>
+<tr><th rowspan="2">AIRLINE</th><th rowspan="2">FLT NO.</th><th rowspan="2">PRODUCT</th><th rowspan="2">ETD</th>
+    <th class="cpkg" colspan="2">CPKG &nbsp;(₹/kg)</th></tr>
+<tr><th class="cpkg">45+ kg</th><th class="cpkg">100+ kg</th></tr>
   </thead>
   <tbody>{''.join(rows_html)}</tbody>
 </table></div>"""
-    st.html(SHEET_CSS + f"""
+st.html(SHEET_CSS + f"""
 <div class="xl">
   <div class="xl-rates">{esc(rates_line)}</div>
   <div class="xl-band">
-    <div><div class="k">ROUTE</div><div class="v route">{route}</div></div>
-    <div><div class="k">WEEKLY FLIGHTS</div><div class="v">{weekly}</div></div>
-    <div><div class="k">FLIGHT COUNT</div><div class="v">{len(results)}</div></div>
-    <div style="background:{STATUS_FILL[status]}"><div class="k">STATUS</div><div class="v st">{status}</div></div>
+<div><div class="k">ROUTE</div><div class="v route">{route}</div></div>
+<div><div class="k">WEEKLY FLIGHTS</div><div class="v">{weekly}</div></div>
+<div><div class="k">FLIGHT COUNT</div><div class="v">{len(results)}</div></div>
+<div style="background:{STATUS_FILL[status]}"><div class="k">STATUS</div><div class="v st">{status}</div></div>
   </div>
   {f'<div class="xl-msg">{msg}</div>' if msg else ''}
   {table}
   <div class="xl-note">CPKG (₹/kg) = tariff rate + surcharge + add-on (X-ray/TSP/handling). Hover a CPKG value to see
-    its breakdown. Surcharges: see 'Flight Rates' (per flight) and 'Network Surcharges' (airline-wide); add-ons are
-    set per airline on 'Add-on Rates'. Amber product = check 'Rate Exceptions'. A small <b>N</b> means the tariff has
-    no 45+/100+ rate on that route, so the N rate is used.</div>
+its breakdown. Amber product = check the rate condition (hover it to see why). A small <b>N</b> means the tariff
+has no 45+/100+ rate on that route, so the N rate is used.</div>
 </div>""")
-
-# ---------------------------------------------------------------------------
-# The other sheets, computed live
-# ---------------------------------------------------------------------------
-
-with tabs[1]:
-    sheet_heading("Add-on Rates", NAVY)
-    df = pd.read_sql_query("SELECT Code AS [Airline code (as in Raw Data)], Name AS Airline, "
-                           "AddOnPerKg AS [Add-on ₹/kg], COALESCE(AddOnIncludes, 'not set') AS Includes "
-                           "FROM Airlines ORDER BY Code", conn)
-    show_sheet(df)
-    st.caption("To change an add-on, edit the *Add-on Rates* sheet in your workbook and replace the workbook in the "
-               "data folder. CPKG on the Dashboard updates straight away.")
-
-all_flights = pd.read_sql_query("SELECT * FROM Flights ORDER BY FlightID", conn)
-
-with tabs[2]:
-    sheet_heading("Raw Data", "#404040")
-    raw = all_flights[["Origin", "Destination"]].copy()
-    raw["OD Pair"] = all_flights["Origin"] + "-" + all_flights["Destination"]
-    raw = pd.concat([raw, all_flights[["Airline", "FlightNo", "DepTime", *DAYS]]], axis=1).rename(
-        columns={"FlightNo": "Flight No", "DepTime": "Dep Time"})
-    raw["Weekly Freq"] = all_flights[DAYS].sum(axis=1)
-    show_sheet(raw, height=560)
-    st.caption(f"{len(raw):,} nonstop flights. Use the search icon at the top right of the table to find a flight.")
-
-with tabs[3]:
-    sheet_heading("OD Pair Summary", "#404040")
-
-    def carrier_label(row):
-        if row["Airline"] == "AIRINDIA":
-            return "Air India Express" if str(row["FlightNo"]).upper().startswith("IX") else "Air India"
-        return airline_name.get(row["Airline"], row["Airline"])
-
-    od = all_flights.assign(**{"OD Pair": all_flights["Origin"] + "-" + all_flights["Destination"],
-                               "Airline ": all_flights.apply(carrier_label, axis=1),
-                               "Total Weekly Flights": all_flights[DAYS].sum(axis=1)})
-    od = (od.groupby(["OD Pair", "Airline "], sort=False)["Total Weekly Flights"].sum().reset_index()
-          .rename(columns={"Airline ": "Airline"}))
-    show_sheet(od, height=560)
-
-with tabs[4]:
-    sheet_heading("Network Surcharges", "#C00000")
-    ns = pd.read_sql_query(
-        "SELECT Carrier AS Airline, AppliesTo AS [Applies To], Station AS [Station / Route], RatePerKg AS [Rs per kg], "
-        "ValidFrom AS [Valid From], ValidTo AS [Valid To], Reason AS [Reason / Source], "
-        "CASE WHEN Active = 1 THEN 'Y' ELSE 'N' END AS [Active (Y/N)], Label AS [Dashboard Label] "
-        "FROM NetworkSurcharges ORDER BY SurchargeID", conn)
-    show_sheet(ns)
-    st.caption("Surcharges from the tariff notes / footnotes that apply across many routes. Route- and flight-specific "
-               "surcharges are read from the rate files automatically. Edit this sheet in your workbook and replace the "
-               "workbook in the data folder to change them.")
-
-priced = eng.price_all([dict(r) for r in all_flights.to_dict("records")])
-
-with tabs[5]:
-    sheet_heading("Flight Rates", BLUE)
-    fr = pd.DataFrame([{
-        "Origin": r.flight["Origin"], "Destination": r.flight["Destination"], "Airline": r.flight["Airline"],
-        "Flight No": r.flight["FlightNo"], "Dep Time": r.flight["DepTime"], "Product": r.product,
-        "Effective Date": dmy(r.effective_date) or None, "Min": r.rates["Min"], "N": r.rates["N"],
-        "45+": r.rates["45"], "100+": r.rates["100"], "300+": r.rates["300"], "500+": r.rates["500"],
-        "1000+": r.rates["1000"], "Status": r.status,
-        "Tariff Condition": r.condition.text if r.condition and r.condition.text else None,
-        "Match Note": r.match_note, "Surcharge Rs/kg": r.surcharge_total if r.rate_row else None,
-        "Surcharge Summary": r.surcharge_summary or None,
-    } for r in priced])
-    for col in ("Min", "N", "45+", "100+", "300+", "500+", "1000+", "Surcharge Rs/kg"):
-        fr[col] = pd.to_numeric(fr[col], errors="coerce")
-    counts = fr["Status"].value_counts()
-    st.caption(" · ".join(f"{k}: {v:,}" for k, v in counts.items()))
-    show_sheet(fr, height=560, Status=st.column_config.TextColumn(width="medium"))
-
-with tabs[6]:
-    sheet_heading("Rate Exceptions", "#C55A11")
-    ex = [r for r in priced if r.status in (STATUS_CHECK, STATUS_NO_RATE)]
-    if ex:
-        show_sheet(pd.DataFrame([{
-            "Origin": r.flight["Origin"], "Destination": r.flight["Destination"], "Airline": r.flight["Airline"],
-            "Flight No": r.flight["FlightNo"], "Dep Time": r.flight["DepTime"], "Status": r.status,
-            "Note": r.match_note, "Tariff Condition": r.condition.text if r.condition else None,
-        } for r in ex]))
-    else:
-        st.success("No exceptions – every flight with a loaded tariff found its rate.")
-    ok = sum(r.status == STATUS_OK for r in priced)
-    st.caption(f"{ok:,} of {len(priced):,} flights priced OK.")
