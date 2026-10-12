@@ -3,6 +3,7 @@
 Bulk data commands (everything here can also be done from the dashboard's
 sidebar, one upload at a time):
 
+    python manage.py sync                                  # load everything new in the data/ folder
     python manage.py load-rates  <file-or-folder> [...]   # Air India / IndiGo rate lists
     python manage.py import-schedule <workbook.xlsx>       # flights, add-ons, surcharges
     python manage.py import-legacy <CargoRates.accdb|.sqlite>   # all old rate history at once
@@ -11,7 +12,7 @@ sidebar, one upload at a time):
 import argparse
 import os
 
-from tariffapp import database_path, db
+from tariffapp import database_path, db, sync
 from tariffapp.etl.loader import load_rate_file
 from tariffapp.importers import import_legacy_db, import_schedule_workbook
 
@@ -19,6 +20,7 @@ from tariffapp.importers import import_legacy_db, import_schedule_workbook
 def main():
     ap = argparse.ArgumentParser(description="Cargo Tariffs data commands.")
     sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("sync", help="Load everything new in the data/ folder (what the app does on start).")
     p = sub.add_parser("load-rates", help="Load rate-list .xlsx files (files or folders).")
     p.add_argument("paths", nargs="+")
     p.add_argument("--force", action="store_true", help="Reload even if already loaded.")
@@ -30,7 +32,13 @@ def main():
     db.init_schema(conn)
     print(f"Database: {database_path()}")
 
-    if args.cmd == "load-rates":
+    if args.cmd == "sync":
+        r = sync.sync_data_folder(conn)
+        print(f"Schedule: {r['schedule'] or 'unchanged'}")
+        print(f"Rate files loaded: {len(r['rates_loaded'])}, already loaded: {r['rates_skipped']}")
+        for e in r["errors"]:
+            print(f"  ERROR {e}")
+    elif args.cmd == "load-rates":
         files = []
         for p in args.paths:
             if os.path.isdir(p):

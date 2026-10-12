@@ -6,20 +6,26 @@ ATC/AOC Flight Schedule - the Excel workbook, live in the browser.
 The Dashboard tab reproduces the workbook's Dashboard sheet (pick Origin and
 Destination, see every flight with its CPKG); the other tabs are the
 workbook's other sheets, computed live from the loaded schedule and rate
-files. New rate files and the schedule workbook are uploaded from the sidebar.
+files.
+
+Data comes from the data/ folder (synced automatically - see data/README.md).
+Everyone can view and interact; only the admin can upload, after signing in
+with the password set as `admin_password` in .streamlit/secrets.toml (or the
+TARIFFAPP_ADMIN_PASSWORD environment variable). With no password set,
+uploading in the app is switched off.
 """
 
 import datetime as dt
+import hmac
 import html
 import os
-import tempfile
+import re
 
 import pandas as pd
 import streamlit as st
 
-from tariffapp import database_path, db, queries
-from tariffapp.etl.loader import load_rate_file
-from tariffapp.importers import DAYS, import_schedule_workbook
+from tariffapp import database_path, db, queries, sync
+from tariffapp.importers import DAYS
 from tariffapp.linker import STATUS_CHECK, STATUS_NO_RATE, STATUS_NO_TARIFF, STATUS_OK, TariffEngine
 
 st.set_page_config(page_title="Flight Schedule", page_icon="✈", layout="wide")
@@ -100,13 +106,33 @@ def num(v):
     return f"{v:g}" if float(v) == int(v) else f"{v:.2f}"
 
 
-def save_upload(f):
-    folder = os.path.join(os.path.dirname(database_path()), "uploads")
+def save_to_data_folder(f, sub):
+    """Store an admin upload in the data folder under its own name, so it is synced like any other file."""
+    folder = os.path.join(sync.data_dir(), sub)
     os.makedirs(folder, exist_ok=True)
-    fd, path = tempfile.mkstemp(suffix=".xlsx", dir=folder, prefix=dt.datetime.now().strftime("%Y%m%d-%H%M%S_"))
-    with os.fdopen(fd, "wb") as out:
+    name = re.sub(r'[\\/:*?"<>|]+', "_", os.path.basename(f.name)).strip() or "upload.xlsx"
+    with open(os.path.join(folder, name), "wb") as out:
         out.write(f.getbuffer())
-    return path
+    return name
+
+
+def admin_password():
+    try:
+        pw = st.secrets.get("admin_password")
+    except Exception:  # noqa: BLE001 - no secrets file at all
+        pw = None
+    return pw or os.environ.get("TARIFFAPP_ADMIN_PASSWORD")
+
+
+@st.cache_resource(show_spinner="Loading the latest data…")
+def sync_data(signature):
+    """Runs once per change of the data folder (signature), shared by every visitor."""
+    c = db.connect(database_path())
+    db.init_schema(c)
+    try:
+        return sync.sync_data_folder(c)
+    finally:
+        c.close()
 
 
 def show_sheet(df, height=None, **config):
@@ -133,37 +159,72 @@ conn = get_conn()
 today = dt.date.today()
 
 # ---------------------------------------------------------------------------
-# Sidebar: keep the data up to date
+# Data: synced from the data folder; uploads only for the signed-in admin
 # ---------------------------------------------------------------------------
 
+sync_result = sync_data(sync.folder_signature())
+ss = st.session_state
+password = admin_password()
+
 with st.sidebar:
-    st.header("Update data")
-    with st.form("rates", clear_on_submit=True, border=False):
-        files = st.file_uploader("New Air India / IndiGo rate files", type=["xlsx"], accept_multiple_files=True,
-                                 help="Upload each new rate list as it arrives. Files already loaded are skipped.")
-        if st.form_submit_button("Load rate files", width="stretch") and files:
-            for f in files:
-                r = load_rate_file(conn, save_upload(f), filename=f.name)
-                {"ok": st.success, "skipped": st.info}.get(r["status"], st.error)(f"{f.name}: {r['message']}")
-                for w in r["warnings"]:
-                    st.warning(f"{f.name}: {w}")
-    with st.form("schedule", clear_on_submit=True, border=False):
-        sched = st.file_uploader("Flight schedule workbook", type=["xlsx", "xlsm"],
-                                 help="Your ATC/AOC schedule workbook. Updates Raw Data, Lists, Add-on Rates and "
-                                      "Network Surcharges from its sheets.")
-        if st.form_submit_button("Load schedule", width="stretch") and sched:
-            try:
-                s = import_schedule_workbook(conn, save_upload(sched), filename=sched.name)
-                st.success(f"Loaded {s['flights']} flights and {s['surcharges']} network surcharges.")
-            except Exception as e:  # noqa: BLE001 - show the problem to the user
-                conn.rollback()
-                st.error(f"{sched.name}: {e}")
+    st.caption("**Rates in use**")
+    for carrier, b in queries.latest_batches(conn).items():
+        st.caption(f"{carrier}: eff. {dmy(b['EffectiveDate'])}" if b else f"{carrier}: none loaded")
+    n_flights = conn.execute("SELECT COUNT(*) FROM Flights").fetchone()[0]
+    st.caption(f"Schedule: {n_flights:,} flights")
+    st.divider()
+
+    if ss.get("is_admin"):
+        st.subheader("Update data")
+        with st.form("rates", clear_on_submit=True, border=False):
+            files = st.file_uploader("New Air India / IndiGo rate files", type=["xlsx"], accept_multiple_files=True,
+                                     help="Saved into data/rates and loaded. Files already loaded are skipped.")
+            if st.form_submit_button("Load rate files", width="stretch", key="load_rates") and files:
+                for f in files:
+                    save_to_data_folder(f, "rates")
+                st.cache_resource.clear()
+                st.rerun()
+        with st.form("schedule", clear_on_submit=True, border=False):
+            sched = st.file_uploader("Flight schedule workbook", type=["xlsx", "xlsm"],
+                                     help="Saved into data/schedule and imported (Raw Data, Lists, Add-on Rates, "
+                                          "Network Surcharges).")
+            if st.form_submit_button("Load schedule", width="stretch", key="load_schedule") and sched:
+                save_to_data_folder(sched, "schedule")
+                st.cache_resource.clear()
+                st.rerun()
+        if st.button("Reload data folder", width="stretch", key="reload"):
+            st.cache_resource.clear()
+            st.rerun()
+        if sync_result["schedule"] or sync_result["rates_loaded"]:
+            loaded = [f"schedule {sync_result['schedule']}"] if sync_result["schedule"] else []
+            loaded += sync_result["rates_loaded"]
+            st.success("Loaded: " + "; ".join(loaded))
+        for e in sync_result["errors"]:
+            st.error(e)
+        st.caption("On Streamlit Cloud, files uploaded here last until the app restarts. To keep them, also add "
+                   "them to the data folder in GitHub.")
+        if st.button("Sign out", key="sign_out"):
+            ss["is_admin"] = False
+            st.rerun()
+    else:
+        with st.expander("🔒 Admin"):
+            if not password:
+                st.caption("Uploading is switched off here. The data is updated from the data folder.")
+            else:
+                with st.form("login", border=False):
+                    pw = st.text_input("Password", type="password", key="admin_pw")
+                    if st.form_submit_button("Sign in", key="sign_in"):
+                        if hmac.compare_digest(pw.encode(), str(password).encode()):
+                            ss["is_admin"] = True
+                            st.rerun()
+                        else:
+                            st.error("Wrong password.")
 
 hubs, stations = queries.stations(conn)
 if not stations:
     st.html(SHEET_CSS + '<div class="xl xl-title">✈&nbsp; FLIGHT &nbsp;SCHEDULE</div>')
-    st.info("Nothing loaded yet. Use **Update data** in the sidebar: first the flight schedule workbook, "
-            "then your Air India and IndiGo rate files.")
+    st.info("No data yet. Add the flight schedule workbook to data/schedule and your Air India / IndiGo rate "
+            "files to data/rates (see data/README.md), or sign in as admin in the sidebar and upload them.")
     st.stop()
 
 eng = TariffEngine(conn, today)
@@ -180,7 +241,6 @@ tabs = st.tabs(["Dashboard", "Add-on Rates", "Raw Data", "OD Pair Summary", "Net
 # ---------------------------------------------------------------------------
 
 with tabs[0]:
-    ss = st.session_state
     if not ss.get("_from_link"):  # a shared link like ?from=DEL&to=BOM opens that route once per session
         ss["_from_link"] = True
         if st.query_params.get("from", "").upper() in hub_codes:
@@ -279,8 +339,8 @@ with tabs[1]:
                            "AddOnPerKg AS [Add-on ₹/kg], COALESCE(AddOnIncludes, 'not set') AS Includes "
                            "FROM Airlines ORDER BY Code", conn)
     show_sheet(df)
-    st.caption("To change an add-on, edit the *Add-on Rates* sheet in your workbook and upload it again from the "
-               "sidebar. CPKG on the Dashboard updates straight away.")
+    st.caption("To change an add-on, edit the *Add-on Rates* sheet in your workbook and replace the workbook in the "
+               "data folder. CPKG on the Dashboard updates straight away.")
 
 all_flights = pd.read_sql_query("SELECT * FROM Flights ORDER BY FlightID", conn)
 
@@ -318,8 +378,8 @@ with tabs[4]:
         "FROM NetworkSurcharges ORDER BY SurchargeID", conn)
     show_sheet(ns)
     st.caption("Surcharges from the tariff notes / footnotes that apply across many routes. Route- and flight-specific "
-               "surcharges are read from the rate files automatically. Edit this sheet in your workbook and upload it "
-               "again to change them.")
+               "surcharges are read from the rate files automatically. Edit this sheet in your workbook and replace the "
+               "workbook in the data folder to change them.")
 
 priced = eng.price_all([dict(r) for r in all_flights.to_dict("records")])
 

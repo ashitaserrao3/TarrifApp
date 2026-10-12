@@ -7,3 +7,6 @@ venv/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# Admin password - never commit
+.streamlit/secrets.toml

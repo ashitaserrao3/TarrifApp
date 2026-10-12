@@ -41,7 +41,7 @@ def dashboard_rows(at):
 def test_empty_database(db_path):
     at = run()
     assert not at.exception
-    assert any("Nothing loaded yet" in i.value for i in at.info)
+    assert any("No data yet" in i.value for i in at.info)
 
 
 def test_tabs_match_the_workbook_sheets(loaded):
@@ -76,3 +76,40 @@ def test_shared_link_opens_route(loaded):
     at = run(**{"from": "del", "to": "COK"})
     assert (at.session_state["origin"], at.session_state["dest"]) == ("DEL", "COK")
     assert {r[1] for r in dashboard_rows(at)} == {"AI1715", "AI2458"}
+
+
+def test_visitors_cannot_upload(loaded):
+    at = run()
+    assert not at.exception
+    assert len(at.get("file_uploader")) == 0
+    assert any("Uploading is switched off" in c.value for c in at.caption)
+
+
+def test_admin_signs_in_to_upload(loaded, monkeypatch):
+    monkeypatch.setenv("TARIFFAPP_ADMIN_PASSWORD", "s3cret")
+    at = run()
+    assert len(at.get("file_uploader")) == 0  # signed out: no upload controls
+    at.text_input(key="admin_pw").input("wrong")
+    at.button(key="sign_in").click().run()
+    assert any("Wrong password" in e.value for e in at.error)
+    assert len(at.get("file_uploader")) == 0
+    at.text_input(key="admin_pw").input("s3cret")
+    at.button(key="sign_in").click().run()
+    assert at.session_state["is_admin"] is True
+    assert len(at.get("file_uploader")) == 2
+    at.button(key="sign_out").click().run()
+    assert len(at.get("file_uploader")) == 0
+
+
+def test_app_builds_itself_from_the_data_folder(db_path, tmp_path):
+    from conftest import make_indigo_file, make_schedule_file
+    data = tmp_path / "data"
+    (data / "schedule").mkdir(parents=True)
+    (data / "rates").mkdir()
+    make_schedule_file(data / "schedule" / "schedule.xlsx", [("AMD", "DEL", "INDIGO", "6E1", "10:00", "MTWTFSS")])
+    make_indigo_file(data / "rates" / "8.1 6E Eff. 16th Aug 2026.xlsx",
+                     [("AMD", "DEL", "GCR", 1800, 70, 50, 40, None, None, None)])
+    at = run("AMD", "DEL")
+    assert not at.exception, at.exception
+    rows = dashboard_rows(at)
+    assert rows == [("INDIGO", "6E1", "GCR", "10:00", "72", "62")]  # 50/40 + fuel 4 + add-on 18

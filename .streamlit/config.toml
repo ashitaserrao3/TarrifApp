@@ -7,5 +7,9 @@ primaryColor = "#1F4E78"
 # Rate lists are a few MB each; leave room for the schedule workbook too.
 maxUploadSize = 100
 
+[client]
+# Visitors only see the app, not Streamlit's developer menu or "Deploy" button.
+toolbarMode = "viewer"
+
 [browser]
 gatherUsageStats = false

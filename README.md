@@ -32,33 +32,54 @@ The page address always holds the current route, e.g.
 `http://localhost:8501/?from=DEL&to=CJB`. Bookmark it, or send it to
 a colleague to open the same view.
 
-## Keeping it up to date
+## Who can change the data
 
-Everything is in the **Update data** sidebar:
+Everyone who opens the app can **view and interact**: pick routes, switch
+sheets, sort and search. **Only you update the data**, in one of two ways.
 
-* **New rate files.** Upload each Air India or IndiGo rate list as it
-  arrives, every ~15 days. Files already loaded are skipped. The effective
-  date is read from the file name (e.g. `8.1 6E Eff. 16th Aug 2026.xlsx`),
-  and the app always uses the newest file that is in force today.
-* **Flight schedule workbook.** Upload `ATC_AOC_Flight_Schedule_*.xlsx`
-  whenever the schedule changes. It replaces the flights, and updates your
-  add-on costs (*Add-on Rates* sheet) and network-wide surcharges such as
-  fuel, SS, ex-BOM and festive (*Network Surcharges* sheet). Edit those
-  sheets in Excel and re-upload, just as before.
+### 1. From the backend: the `data/` folder (recommended)
+
+```
+data/schedule/   the ATC/AOC flight-schedule workbook
+data/rates/      every Air India / IndiGo rate-list .xlsx (keep the old ones: they're the history)
+```
+
+The app loads anything new in this folder when it starts or when a file
+changes. A rate file already in the database is skipped, and the workbook
+is only re-imported when its contents change. To update:
+
+* **On GitHub's website:** open `data/rates` (or `data/schedule`), click
+  *Add file → Upload files*, drop in the file, and click *Commit changes*.
+  Streamlit Cloud picks it up within about a minute.
+* **On your PC:** copy the file into the folder. Then commit and push it, or
+  run `python manage.py sync`.
+
+Only people who can change your GitHub repository can change the data. Because
+the files live in the repository, the data survives app restarts and
+redeploys on Streamlit Community Cloud.
+
+### 2. Admin sign-in inside the app
+
+Set a password, and you'll see a **🔒 Admin** box in the sidebar. Signing in
+shows the upload buttons. Visitors never see them.
+
+* **On your PC:** copy `.streamlit/secrets.toml.example` to
+  `.streamlit/secrets.toml` and set `admin_password`. Git ignores this file,
+  so the password is never pushed.
+* **On Streamlit Cloud:** open the app's *Settings → Secrets* and add
+  `admin_password = "your password"`.
+
+With no password set, uploading inside the app is switched off completely.
+Files uploaded this way are saved into `data/`. On Streamlit Cloud they last
+only until the app restarts, so for anything permanent use option 1.
 
 ### First-time load of your full history
 
-To bring in all your past rate files in one go instead of uploading them one
-by one:
-
-```bash
-python manage.py import-schedule ATC_AOC_Flight_Schedule_v2-2.xlsx
-python manage.py load-rates "C:\CargoRates\incoming"                  # a folder of rate files
-python manage.py import-legacy "C:\CargoRates\CargoRates.accdb"      # or: copy the old Access database
-```
-
-`import-legacy` on an `.accdb` needs Windows with the Microsoft Access
-driver installed.
+Put the workbook in `data/schedule/` and all your past rate files in
+`data/rates/`, then run `python manage.py sync`, or just start the app. You
+can also copy everything from your old Access database at once:
+`python manage.py import-legacy "C:\CargoRates\CargoRates.accdb"` (needs
+Windows with the Microsoft Access driver).
 
 ## How each flight gets its rate
 
@@ -80,13 +101,12 @@ all 1,630 flights.
 
 ## Good to know
 
-* **No login.** Anyone who can open the page can upload files. Keep it on
-  your PC or office network, or limit viewers in the Streamlit Cloud
-  settings.
-* **Streamlit Community Cloud doesn't keep files.** The database
-  (`instance/tariff.sqlite`) is wiped when the app restarts or you push an
-  update, so you'd re-upload the schedule and rate files. For permanent use,
-  run it on an office PC.
+* **Viewing is open to anyone with the link.** To limit who can view, make
+  the app private in the Streamlit Cloud settings and invite people by email.
+* **Streamlit Community Cloud doesn't keep files it wasn't deployed with.**
+  The database is rebuilt from the `data/` folder after a restart. The first
+  visitor after a restart waits while it loads, which can take a minute with
+  many rate files. That's why updates should go into `data/` in GitHub.
 * **Akasa and SpiceJet** show *Tariff not loaded* until a reader for their
   rate files is added. Send a sample file of each.
 
@@ -94,12 +114,14 @@ all 1,630 flights.
 
 ```
 streamlit_app.py       the app (Dashboard + sheet tabs)
-manage.py              bulk data commands
+manage.py              data commands (sync, load-rates, import-schedule, import-legacy)
+data/                  your schedule workbook and rate files (see data/README.md)
 tariffapp/
   etl/parsers.py       reads the Air India / IndiGo Excel files
   etl/loader.py        stores a parsed file (every cycle kept, tagged by effective date)
   importers.py         schedule workbook + old database import
   linker.py            flight → rate matching, surcharges, cost per kg
+  sync.py              loads new files from the data/ folder
   queries.py, db.py, schema.py
 tests/                 python -m pytest
 ```

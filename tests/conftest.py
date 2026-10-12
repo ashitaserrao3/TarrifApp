@@ -78,6 +78,8 @@ def make_schedule_file(path, flights):
 def db_path(tmp_path, monkeypatch):
     path = str(tmp_path / "t.sqlite")
     monkeypatch.setenv("TARIFFAPP_DB", path)
+    monkeypatch.setenv("TARIFFAPP_DATA", str(tmp_path / "data"))  # never touch the repo's data folder
+    monkeypatch.delenv("TARIFFAPP_ADMIN_PASSWORD", raising=False)
     return path
 
 

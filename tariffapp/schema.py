@@ -171,6 +171,12 @@ CREATE TABLE IF NOT EXISTS Flights (
 );
 CREATE INDEX IF NOT EXISTS ix_Flights_od ON Flights(Origin, Destination);
 
+-- Small key/value store (e.g. which schedule workbook from the data folder is loaded).
+CREATE TABLE IF NOT EXISTS AppState (
+    Key    TEXT PRIMARY KEY,
+    Value  TEXT
+);
+
 CREATE TABLE IF NOT EXISTS ScheduleImports (
     ImportID        INTEGER PRIMARY KEY AUTOINCREMENT,
     SourceFileName  TEXT,
