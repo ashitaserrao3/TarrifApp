@@ -1,17 +1,20 @@
-# Cargo Rates
+# ATC/AOC Flight Schedule — live in the browser
 
-A one-page dashboard for domestic air cargo rates. Pick **From**, **To** and
-the **weight**, and it shows every nonstop flight on that route, ranked by
-what it will actually cost you per kg. The cheapest options are highlighted.
+Your *ATC/AOC Flight Schedule* workbook as an interactive web app. The
+**Dashboard** tab looks and works like the Dashboard sheet: pick **Origin**
+and **Destination** from the yellow drop-downs to see the route, weekly
+flights, flight count, status, and every flight with its product, ETD and
+**CPKG (₹/kg) at 45+ and 100+ kg**. Hover a CPKG value to see its breakdown
+(tariff + surcharge + add-on).
 
-> All-in per kg = (air freight + surcharges + your add-on) ÷ weight
+The workbook's other sheets are tabs next to it, computed live from the
+loaded schedule and rate files. Each one can be sorted and searched:
+**Add-on Rates, Raw Data, OD Pair Summary, Network Surcharges, Flight Rates,
+Rate Exceptions.**
 
-Air freight uses the right weight break for your weight, the minimum charge,
-and the rule that a higher break is used when it works out cheaper. Small
-shipments therefore show their true, higher, cost per kg.
-
-It replaces the *CargoRates* Access database and the Dashboard sheet of the
-*ATC/AOC Flight Schedule* workbook.
+Rates come from your Air India and IndiGo rate files, matched to each flight
+the same way the workbook's *Flight Rates* sheet does (all 1,630 flights
+match).
 
 ## Run it
 
@@ -25,8 +28,8 @@ streamlit run streamlit_app.py
 It opens at http://localhost:8501. Colleagues on the same network can use
 `http://<your-pc-name>:8501`.
 
-The page address always holds the current route and weight, e.g.
-`http://localhost:8501/?from=DEL&to=BOM&kg=250`. Bookmark it, or send it to
+The page address always holds the current route, e.g.
+`http://localhost:8501/?from=DEL&to=CJB`. Bookmark it, or send it to
 a colleague to open the same view.
 
 ## Keeping it up to date
@@ -36,7 +39,7 @@ Everything is in the **Update data** sidebar:
 * **New rate files.** Upload each Air India or IndiGo rate list as it
   arrives, every ~15 days. Files already loaded are skipped. The effective
   date is read from the file name (e.g. `8.1 6E Eff. 16th Aug 2026.xlsx`),
-  and the dashboard always uses the newest file that is in force today.
+  and the app always uses the newest file that is in force today.
 * **Flight schedule workbook.** Upload `ATC_AOC_Flight_Schedule_*.xlsx`
   whenever the schedule changes. It replaces the flights, and updates your
   add-on costs (*Add-on Rates* sheet) and network-wide surcharges such as
@@ -90,7 +93,7 @@ all 1,630 flights.
 ## Project layout
 
 ```
-streamlit_app.py       the dashboard
+streamlit_app.py       the app (Dashboard + sheet tabs)
 manage.py              bulk data commands
 tariffapp/
   etl/parsers.py       reads the Air India / IndiGo Excel files

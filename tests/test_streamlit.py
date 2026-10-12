@@ -1,26 +1,41 @@
-"""The one-page dashboard renders, ranks flights cheapest-first and reacts to inputs."""
+"""The Excel-style app: the Dashboard sheet and the workbook's other sheets as tabs."""
 
 import os
+import re
 
 import pytest
 
 AppTest = pytest.importorskip("streamlit.testing.v1").AppTest
 
 APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "streamlit_app.py")
+SHEETS = ["Dashboard", "Add-on Rates", "Raw Data", "OD Pair Summary", "Network Surcharges", "Flight Rates",
+          "Rate Exceptions"]
 
 
-def run(origin=None, dest=None):
+def run(origin=None, dest=None, **query):
     at = AppTest.from_file(APP, default_timeout=60)
     if origin:
         at.session_state["origin"] = origin
     if dest:
         at.session_state["dest"] = dest
+    for k, v in query.items():
+        at.query_params[k] = v
     return at.run()
 
 
-def table(at):
-    df = at.dataframe[0].value
-    return getattr(df, "data", df)  # Styler -> DataFrame
+def sheet_html(at):
+    return " ".join(getattr(h.proto, "body", "") for h in at.get("html"))
+
+
+def dashboard_rows(at):
+    """[(airline, flight, product, etd, cpkg45, cpkg100)] from the Dashboard table."""
+    body = sheet_html(at)
+    tbody = body.split("<tbody>", 1)[1].split("</tbody>", 1)[0] if "<tbody>" in body else ""
+    rows = []
+    for tr in re.findall(r"<tr>(.*?)</tr>", tbody, re.S):
+        cells = [re.sub(r"<sup>.*?</sup>|<[^>]+>", "", td).strip() for td in re.findall(r"<td[^>]*>(.*?)</td>", tr, re.S)]
+        rows.append(tuple(cells))
+    return rows
 
 
 def test_empty_database(db_path):
@@ -29,48 +44,35 @@ def test_empty_database(db_path):
     assert any("Nothing loaded yet" in i.value for i in at.info)
 
 
-def test_route_ranked_cheapest_first(loaded):
-    # Today is after every loaded file, so the 16-Aug IndiGo cycle applies.
-    at = run("AMD", "DEL")
+def test_tabs_match_the_workbook_sheets(loaded):
+    at = run()
     assert not at.exception, at.exception
-    df = table(at)
-    # 6E100 is LEAN (14:00): 100 kg uses the 100+ break, 26 + surcharges 9 + add-on 18 = 53/kg
-    assert list(df["Flight"])[0] == "6E100"
-    assert df.iloc[0]["₹/kg all-in"] == 53 and df.iloc[0]["Total ₹"] == 5300
-    assert [m.value for m in at.metric][:3] == ["6E100", "₹53", "₹5,300"]
-    assert at.metric[0].delta == "IndiGo · departs 14:00"
-    assert at.metric[3].value == "25"
-    # flights without a usable rate sink to the bottom with a note
-    tail = df.set_index("Flight").loc[["6E777", "QP1000"], "Note"].tolist()
-    assert tail[0].startswith("Check:") and tail[1] == "Tariff not loaded"
-    assert set(df["Flight"].iloc[-2:]) == {"6E777", "QP1000"}
+    assert [t.label for t in at.tabs] == SHEETS
+    assert len(at.dataframe) >= 5  # every sheet tab renders its table
 
 
-def test_weight_changes_the_answer(loaded):
+def test_dashboard_matches_excel_layout_and_values(loaded):
     at = run("AMD", "DEL")
-    at.number_input(key="weight").set_value(10.0).run()
-    df = table(at)
-    # 10 kg is under every minimum charge (1800) -> 180/kg freight + surcharges + add-on
-    row = df.set_index("Flight").loc["6E100"]
-    assert row["Total ₹"] == 1800 + (9 + 18) * 10
+    body = sheet_html(at)
+    for text in ("FLIGHT &nbsp;SCHEDULE", "ROUTE", "WEEKLY FLIGHTS", "FLIGHT COUNT", "ACTIVE", "CPKG &nbsp;(₹/kg)"):
+        assert text in body
+    assert ">25<" in body and ">5<" in body  # 7+3+1+7+7 weekly flights, 5 flight numbers
+    rows = {r[1]: r for r in dashboard_rows(at)}
+    # 6E100 is LEAN at 14:00: 45+ = 55 + surcharges 9 + add-on 18; 100+ = 26 + 9 + 18
+    assert rows["6E100"] == ("INDIGO", "6E100", "LEAN", "14:00", "82", "53")
+    assert rows["6E396"][2] == "GCR"
+    assert rows["QP1000"][2:] == ("No tariff", "09:00", "", "")
+    assert "class='c check'" in body  # 6E396 (departure time '0') is flagged amber, as in Excel
 
 
-def test_swap_and_route_states(loaded):
-    at = run("AMD", "DEL")
-    at.button(key="swap").click().run()
-    assert at.session_state["origin"] == "DEL" and at.session_state["dest"] == "AMD"
-    at = run("AMD", "AMD")
-    assert any("two different cities" in w.value for w in at.warning)
-    at = run("BOM", "COK")
-    assert any("No nonstop flights" in i.value for i in at.info)
+def test_same_city_and_no_service_messages(loaded):
+    body = sheet_html(run("AMD", "AMD"))
+    assert "SAME CITY" in body and "select two different cities" in body
+    body = sheet_html(run("BOM", "COK"))
+    assert "NO SERVICE" in body and "No nonstop flights" in body
 
 
-def test_shared_link_opens_route_and_weight(loaded):
-    at = AppTest.from_file(APP, default_timeout=60)
-    at.query_params["from"] = "del"
-    at.query_params["to"] = "COK"
-    at.query_params["kg"] = "250"
-    at.run()
-    assert not at.exception
-    assert (at.session_state["origin"], at.session_state["dest"], at.session_state["weight"]) == ("DEL", "COK", 250)
-    assert at.metric[2].label == "Total for 250 kg"
+def test_shared_link_opens_route(loaded):
+    at = run(**{"from": "del", "to": "COK"})
+    assert (at.session_state["origin"], at.session_state["dest"]) == ("DEL", "COK")
+    assert {r[1] for r in dashboard_rows(at)} == {"AI1715", "AI2458"}

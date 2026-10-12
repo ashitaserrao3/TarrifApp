@@ -1,3 +1,8 @@
+[theme]
+# The app mirrors the Excel workbook, so it keeps the workbook's light look.
+base = "light"
+primaryColor = "#1F4E78"
+
 [server]
 # Rate lists are a few MB each; leave room for the schedule workbook too.
 maxUploadSize = 100
