@@ -16,6 +16,7 @@ Pages (the same in both front ends):
 | Page | What it does |
 |---|---|
 | **Route lookup** | Pick origin, destination, the date the rates should apply on, and optionally a shipment weight. Shows every nonstop flight with its airline, departure time, days of operation, product (GCR / LEAN / PRIME), rate, surcharges, add-on and CPKG at 45+ and 100+ kg. With a weight, it also shows the total cost, using the minimum charge and the "cheaper at a higher weight break" rule. The cheapest option is highlighted. *(This is the old Dashboard sheet.)* |
+| **Airline picker** | For a shipment weight and date, the cheapest airline on **every** route, the flight to book, its ₹/kg and total, the runner-up airline, and how much you save (₹ and %). A summary shows how many routes each airline wins and the total saving. Airlines that couldn't be priced on a route (no tariff, needs checking) are listed under *Not compared*. **CSV download.** |
 | **All flights** | Every flight with its linked rate, filters, and **CSV download**. *(This is the old Flight Rates sheet.)* |
 | **Rate history** | How a lane's rate moved across every file you've loaded, as a chart and a table. |
 | **Tariffs** | Browse any loaded rate file, any product (GCR, LEAN, PRIME, SCR, HEA, XPS, DGR…). |
@@ -126,6 +127,35 @@ When the airline notes announce a new network-wide surcharge (fuel, festive,
 ex-station…), add it under **Settings → Network surcharges** with its
 validity dates.
 
+### Automatic airline picks
+
+The **Airline picker** page recalculates by itself every time you upload rate
+files. To get the recommendation without opening the app, for example as a
+CSV dropped in a shared folder every morning, use the `recommend` command:
+
+```bash
+flask --app tariffapp recommend --weight 100 --out picks.csv
+flask --app tariffapp recommend --load "C:\CargoRates\incoming" --weight 250 --origin AMD --out picks.csv
+```
+
+`--load` first loads any new rate files in that folder (files already loaded
+are skipped), so one command picks up the latest rates and writes the report.
+Other options: `--date YYYY-MM-DD` (rates as of; default today) and
+`--origin` (repeat for several). It also prints a summary like:
+
+```
+AMD-DEL   Cheapest   Air India   AI555   Rs 47.00/kg  saves Rs 600 (11.3%) vs IndiGo
+```
+
+To run it on a schedule, add that command to Windows Task Scheduler (or cron
+on macOS/Linux), run from this folder with the virtual environment active.
+
+How the pick is made: each flight is priced for the given weight (freight with
+the minimum charge and the cheaper-higher-break rule, plus surcharges and
+add-on, all as on the Route lookup page). Each airline is represented by its
+cheapest flight on the route, and the cheapest airline wins. Only flights
+priced *OK* compete.
+
 ### Command line (optional)
 
 ```bash
@@ -148,6 +178,7 @@ tariffapp/
   importers.py             schedule workbook + legacy database import
   linker.py                flight → rate matching, surcharges, CPKG (replaces link_rates.py)
   queries.py               read-side queries shared by both front ends
+  recommend.py             airline picker: cheapest airline per route + savings
   settings_store.py        validated saves for the Settings tables
   views.py                 Flask pages
   templates/, static/      HTML + CSS (Chart.js is bundled under static/vendor)

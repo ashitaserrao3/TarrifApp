@@ -17,7 +17,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from tariffapp import database_path, db, queries
+from tariffapp import database_path, db, queries, recommend
 from tariffapp.etl.loader import delete_batch, load_rate_file
 from tariffapp.importers import DAYS, import_schedule_workbook
 from tariffapp.linker import (GENERAL_PRODUCTS, STATUS_CHECK, STATUS_NO_RATE, STATUS_NO_TARIFF, STATUS_OK)
@@ -207,6 +207,76 @@ def page_route():
                     f"- **{s.short}** – {s.reason}" for s in r.surcharges))
             st.markdown(f"Add-on: ₹{r.addon or 0:g}/kg {f'({r.addon_note})' if r.addon_note else ''}  \n"
                         f"Rate file: {r.source_file} (eff. {dmy(r.effective_date)})")
+
+
+# ---------------------------------------------------------------------------
+# Airline picker
+# ---------------------------------------------------------------------------
+
+def page_picker():
+    conn = get_conn()
+    hubs, stations = queries.stations(conn)
+    st.title("💰 Airline picker")
+    st.caption("For every route, the airline that moves your shipment for the least money, and what you save "
+               "against the next-cheapest airline. Updates automatically whenever you upload new rate files.")
+    if not stations:
+        st.info("No flight schedule loaded yet. Go to **Upload** and upload the flight-schedule workbook, "
+                "then your Air India and IndiGo rate files.")
+        return
+
+    c1, c2, c3 = st.columns([1.4, 1.4, 3])
+    weight = c1.number_input("Shipment weight (kg)", min_value=1.0, step=10.0, value=recommend.DEFAULT_WEIGHT,
+                             key="pick_weight", help="Chargeable weight. Minimum charge and weight breaks apply.")
+    with c2:
+        as_of = as_of_picker("pick_date")
+    fo = c3.multiselect("Origin", [s["Code"] for s in hubs], key="pick_origins", placeholder="All hubs")
+
+    _, picks = recommend.recommend(conn, as_of, weight, origins=set(fo) or None)
+    if not picks:
+        st.info("No routes to compare.")
+        return
+    s = recommend.summary(picks)
+    m = st.columns(4)
+    m[0].metric("Routes", s["lanes"])
+    m[1].metric("With 2+ airlines priced", s["contested"])
+    m[2].metric(f"Saving on one {weight:g} kg shipment per route", f"₹{s['total_saving']:,.0f}")
+    m[3].metric("Most routes won", f"{s['wins'][0][0]} ({s['wins'][0][1]})" if s["wins"] else "–")
+
+    if s["wins"]:
+        wins = pd.DataFrame([{"Airline": a, "Routes won": n, "Saving ₹": round(s["saving_by_airline"][a])}
+                             for a, n in s["wins"]])
+        st.altair_chart(alt.Chart(wins).mark_bar().encode(
+            x=alt.X("Routes won:Q", axis=alt.Axis(tickMinStep=1)), y=alt.Y("Airline:N", sort="-x", title=None),
+            tooltip=["Airline", "Routes won", "Saving ₹"]).properties(height=40 + 32 * len(wins)), width="stretch")
+
+    only_contested = st.toggle("Only routes where airlines compete", value=False, key="pick_contested")
+    shown = [p for p in picks if p.saving is not None] if only_contested else picks
+    df = pd.DataFrame([{
+        "Route": f"{p.origin}–{p.dest}", "Pick": p.winner.airline if p.winner else "",
+        "Verdict": p.verdict, "Flight": p.winner.best.flight["FlightNo"] if p.winner else "",
+        "ETD": p.winner.best.flight["DepTime"] if p.winner else "",
+        "Product": p.winner.best.product if p.winner else "",
+        "₹/kg": p.winner.per_kg if p.winner else None, "Total ₹": p.winner.total if p.winner else None,
+        "Runner-up": p.runner_up.airline if p.runner_up else "",
+        "Runner-up ₹/kg": p.runner_up.per_kg if p.runner_up else None,
+        "Saving ₹": p.saving, "Saving %": p.saving_pct,
+        "Not compared": ", ".join(f"{a} ({why.lower()})" for a, why in sorted(p.unpriced.items())),
+    } for p in shown])
+    df = numeric(df, ["₹/kg", "Total ₹", "Runner-up ₹/kg", "Saving ₹", "Saving %"])
+    st.dataframe(df, hide_index=True, width="stretch", height=560, column_config={
+        "₹/kg": NUM(format="%.2f"), "Runner-up ₹/kg": NUM(format="%.2f"), "Total ₹": NUM(format="localized"),
+        "Saving ₹": NUM(format="localized"), "Saving %": NUM(format="%.1f%%")})
+    st.caption("₹/kg = (freight with minimum charge and weight-break rule + surcharges + add-on) ÷ weight, for "
+               "each airline's cheapest flight on the route. *Not compared* = airlines on the route with no "
+               "loaded tariff or no confidently matched rate – check them on the **Exceptions** page.")
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(recommend.EXPORT_HEADER)
+    for p in picks:
+        w.writerow(recommend.export_row(p))
+    st.download_button("⬇ Download recommendations (CSV)", buf.getvalue().encode("utf-8-sig"),
+                       file_name=f"airline_picks_{as_of}_{weight:g}kg.csv", mime="text/csv")
 
 
 # ---------------------------------------------------------------------------
@@ -596,6 +666,7 @@ def page_settings():
 
 pages = [
     st.Page(page_route, title="Route lookup", icon="✈️", default=True),
+    st.Page(page_picker, title="Airline picker", icon="💰", url_path="picker"),
     st.Page(page_flights, title="All flights", icon="📋", url_path="flights"),
     st.Page(page_history, title="Rate history", icon="📈", url_path="history"),
     st.Page(page_tariffs, title="Tariffs", icon="🗂️", url_path="tariffs"),

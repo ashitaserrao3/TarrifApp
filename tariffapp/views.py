@@ -13,7 +13,7 @@ from werkzeug.utils import secure_filename
 from .db import get_db
 from .etl.loader import delete_batch, load_rate_file
 from .importers import DAYS, import_schedule_workbook
-from . import queries
+from . import queries, recommend
 from .linker import GENERAL_PRODUCTS, STATUS_CHECK, STATUS_NO_RATE, STATUS_NO_TARIFF, STATUS_OK
 from .schema import CARRIER_TABLES
 
@@ -124,6 +124,45 @@ def dashboard():
     return render_template("dashboard.html", hubs=hubs, stations=stations, names=names, origin=origin,
                            dest=dest, as_of=as_of, weight=weight, rows=rows, weekly=weekly,
                            status=status, best=best, batches=batches)
+
+
+# ---------------------------------------------------------------------------
+# Airline picker - cheapest airline per route
+# ---------------------------------------------------------------------------
+
+def _picks():
+    conn = get_db()
+    as_of = _as_of()
+    weight = _float(request.args.get("weight"))
+    if not weight or weight <= 0:
+        weight = recommend.DEFAULT_WEIGHT
+    origin = (request.args.get("origin") or "").upper()
+    _, picks = recommend.recommend(conn, as_of, weight, origins={origin} if origin else None)
+    return conn, as_of, weight, origin, picks
+
+
+@bp.route("/picker")
+def picker():
+    conn, as_of, weight, origin, picks = _picks()
+    hubs, stations = queries.stations(conn)
+    if not stations:
+        return render_template("empty.html")
+    contested = bool(request.args.get("contested"))
+    shown = [p for p in picks if p.saving is not None] if contested else picks
+    return render_template("picker.html", picks=shown, s=recommend.summary(picks), as_of=as_of, weight=weight,
+                           origin=origin, hubs=hubs, contested=contested)
+
+
+@bp.route("/picker.csv")
+def picker_csv():
+    _, as_of, weight, _, picks = _picks()
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(recommend.EXPORT_HEADER)
+    for p in picks:
+        w.writerow(recommend.export_row(p))
+    return Response("﻿" + buf.getvalue(), mimetype="text/csv", headers={
+        "Content-Disposition": f"attachment; filename=airline_picks_{as_of}_{weight:g}kg.csv"})
 
 
 # ---------------------------------------------------------------------------

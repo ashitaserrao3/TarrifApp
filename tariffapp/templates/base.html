@@ -14,6 +14,7 @@
     <nav>
       {% set ep = request.endpoint %}
       <a href="{{ url_for('main.dashboard') }}" class="{{ 'active' if ep == 'main.dashboard' }}">Route lookup</a>
+      <a href="{{ url_for('main.picker') }}" class="{{ 'active' if ep == 'main.picker' }}">Airline picker</a>
       <a href="{{ url_for('main.flights') }}" class="{{ 'active' if ep == 'main.flights' }}">All flights</a>
       <a href="{{ url_for('main.history') }}" class="{{ 'active' if ep == 'main.history' }}">Rate history</a>
       <a href="{{ url_for('main.tariffs') }}" class="{{ 'active' if ep == 'main.tariffs' }}">Tariffs</a>

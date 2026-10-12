@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_macros.html" import product, station_options with context %}
+{% block title %}Airline picker{% endblock %}
+{% block content %}
+<h1>Airline picker</h1>
+<p class="muted">For every route, the airline that moves your shipment for the least money, and what you save
+  against the next-cheapest airline. Updates automatically whenever you upload new rate files.</p>
+<form class="panel filters" method="get">
+  <label>Shipment weight (kg)<input type="number" name="weight" min="1" step="any" value="{{ weight|num }}"></label>
+  <label>Rates as of<input type="date" name="date" value="{{ as_of.isoformat() }}"></label>
+  <label>Origin<select name="origin">{{ station_options(hubs, origin, 'All hubs') }}</select></label>
+  <label><input type="checkbox" name="contested" value="1" {{ 'checked' if contested }}> Only routes where airlines compete</label>
+  <button>Show</button>
+  <a class="btn secondary" href="{{ url_for('main.picker_csv', date=as_of.isoformat(), weight=weight|num, origin=origin or None) }}">Download CSV</a>
+</form>
+
+<div class="cards">
+  <div class="card"><div class="k">Routes</div><div class="v">{{ s.lanes }}</div></div>
+  <div class="card"><div class="k">With 2+ airlines priced</div><div class="v">{{ s.contested }}</div></div>
+  <div class="card"><div class="k">Saving on one {{ weight|num }} kg shipment per route</div><div class="v">₹{{ s.total_saving|inr }}</div></div>
+  <div class="card"><div class="k">Routes won</div><div class="v small">
+    {% for a, n in s.wins %}{{ a }}: {{ n }}{% if not loop.last %} · {% endif %}{% else %}–{% endfor %}</div></div>
+</div>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Route</th><th>Pick</th><th>Verdict</th><th>Flight</th><th>ETD</th><th>Product</th>
+    <th class="n">₹/kg</th><th class="n">Total ₹</th><th>Runner-up</th><th class="n">Runner-up ₹/kg</th>
+    <th class="n">Saving ₹</th><th class="n">Saving %</th><th class="hide-sm">Not compared</th></tr></thead>
+  <tbody>
+  {% for p in picks %}{% set w = p.winner %}{% set r = p.runner_up %}
+    <tr>
+      <td class="nowrap"><a href="{{ url_for('main.dashboard', origin=p.origin, dest=p.dest, date=as_of.isoformat(), weight=weight|num) }}">{{ p.origin }}–{{ p.dest }}</a></td>
+      <td class="{{ 'best' if w and r and not p.tie }}">{{ w.airline if w }}</td>
+      <td>{% if p.verdict == 'Cheapest' %}<span class="badge b-ok">Cheapest</span>
+          {% elif p.verdict == 'No priced option' %}<span class="badge b-bad">No priced option</span>
+          {% else %}<span class="badge b-check">{{ p.verdict }}</span>{% endif %}</td>
+      <td class="nowrap">{{ w.best.flight.FlightNo if w }}</td><td>{{ w.best.flight.DepTime if w }}</td>
+      <td>{{ product(w.best) if w }}</td>
+      <td class="n">{{ '%.2f'|format(w.per_kg) if w }}</td><td class="n">{{ w.total|inr if w }}</td>
+      <td>{{ r.airline if r }}</td><td class="n">{{ '%.2f'|format(r.per_kg) if r }}</td>
+      <td class="n">{{ p.saving|inr }}</td><td class="n">{{ '%.1f%%'|format(p.saving_pct) if p.saving_pct is not none }}</td>
+      <td class="small muted hide-sm">{% for a, why in p.unpriced|dictsort %}{{ a }} ({{ why|lower }}){% if not loop.last %}, {% endif %}{% endfor %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="13" class="muted">No routes to compare.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="muted small">₹/kg = (freight with minimum charge and weight-break rule + surcharges + add-on) ÷ weight,
+  for each airline's cheapest flight on the route. <i>Not compared</i> = airlines on the route with no loaded tariff
+  or no confidently matched rate – check them on the <a href="{{ url_for('main.exceptions', date=as_of.isoformat()) }}">Exceptions</a> page.</p>
+{% endblock %}

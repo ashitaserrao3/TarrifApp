@@ -29,7 +29,8 @@ def st_db(app, loaded, monkeypatch):
 
 
 @pytest.mark.parametrize("page", ["page_route", "page_flights", "page_history", "page_tariffs", "page_notes",
-                                  "page_exceptions", "page_upload", "page_settings"])
+                                  "page_exceptions", "page_upload", "page_settings",
+                                  "page_picker"])
 def test_every_page_renders(st_db, page):
     at = page_app(page).run()
     assert not at.exception, at.exception
