@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tariffapp import create_app, db  # noqa: E402
+from tariffapp import db  # noqa: E402
 
 
 def make_indigo_file(path, rows):
@@ -75,21 +75,22 @@ def make_schedule_file(path, flights):
 
 
 @pytest.fixture
-def app(tmp_path):
-    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "t.sqlite"),
-                      "UPLOAD_FOLDER": str(tmp_path / "up"), "SECRET_KEY": "test"})
-    yield app
+def db_path(tmp_path, monkeypatch):
+    path = str(tmp_path / "t.sqlite")
+    monkeypatch.setenv("TARIFFAPP_DB", path)
+    return path
 
 
 @pytest.fixture
-def conn(app):
-    c = db.connect(app.config["DATABASE"])
+def conn(db_path):
+    c = db.connect(db_path)
+    db.init_schema(c)
     yield c
     c.close()
 
 
 @pytest.fixture
-def loaded(app, conn, tmp_path):
+def loaded(conn, tmp_path):
     """A database with one schedule + two IndiGo cycles + one Air India cycle."""
     from tariffapp.etl.loader import load_rate_file
     from tariffapp.importers import import_schedule_workbook

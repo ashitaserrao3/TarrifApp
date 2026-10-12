@@ -1,167 +1,98 @@
-# Cargo Tariffs — air cargo rate lookup web app
+# Cargo Rates
 
-A small web app (with two interchangeable front ends: **Streamlit** and
-**Flask**) that replaces the *CargoRates* Access database plus the
-*ATC/AOC Flight Schedule* Excel workbook. You upload the Air India and IndiGo
-domestic rate lists as they arrive (every ~15 days). The app keeps every
-cycle, links every scheduled flight to the rate that applies to it, and shows
-the **cost per kg (CPKG)** for any route:
+A one-page dashboard for domestic air cargo rates. Pick **From**, **To** and
+the **weight**, and it shows every nonstop flight on that route, ranked by
+what it will actually cost you per kg. The cheapest options are highlighted.
 
-> CPKG = tariff rate + surcharges + your add-on (X-ray / TSP / handling)
+> All-in per kg = (air freight + surcharges + your add-on) ÷ weight
 
-## What's in it
+Air freight uses the right weight break for your weight, the minimum charge,
+and the rule that a higher break is used when it works out cheaper. Small
+shipments therefore show their true, higher, cost per kg.
 
-Pages (the same in both front ends):
+It replaces the *CargoRates* Access database and the Dashboard sheet of the
+*ATC/AOC Flight Schedule* workbook.
 
-| Page | What it does |
-|---|---|
-| **Route lookup** | Pick origin, destination, the date the rates should apply on, and optionally a shipment weight. Shows every nonstop flight with its airline, departure time, days of operation, product (GCR / LEAN / PRIME), rate, surcharges, add-on and CPKG at 45+ and 100+ kg. With a weight, it also shows the total cost, using the minimum charge and the "cheaper at a higher weight break" rule. The cheapest option is highlighted. *(This is the old Dashboard sheet.)* |
-| **All flights** | Every flight with its linked rate, filters, and **CSV download**. *(This is the old Flight Rates sheet.)* |
-| **Rate history** | How a lane's rate moved across every file you've loaded, as a chart and a table. |
-| **Tariffs** | Browse any loaded rate file, any product (GCR, LEAN, PRIME, SCR, HEA, XPS, DGR…). |
-| **Notes** | Air India Notation, IndiGo footnotes and TSP charges from the latest files. |
-| **Exceptions** | Flights the app couldn't price confidently, surcharges whose validity has ended, airlines with no tariff, and rows the loader couldn't classify. |
-| **Upload** | Upload rate files and the schedule workbook. Shows every file loaded, and lets you delete one. |
-| **Settings** | Network-wide surcharges (fuel, SS, ex-BOM, festive…), airline add-on costs, and stations (which are hubs, plus code aliases such as TVM → TRV). |
-
-### How a flight is matched to its rate
-
-The flight-to-rate matching rules were rebuilt from the workbook's
-*Flight Rates* sheet. Against the same rate files, the app reproduces that
-sheet exactly: all 1,630 flights match on product, rate and surcharges.
-
-1. **Which rate file:** the latest file for that carrier whose effective
-   date is on or before the *rates as of* date. Change the date to see what
-   a route cost in the past.
-2. **Which rate row:** only general cargo is considered (IndiGo GCR / LEAN,
-   Air India GCR / PRIME). The condition text on each row is read as one of:
-   *all flights*, *specific flights* (`Applicable for 6E 5245`,
-   `(AI-2421, AI-2429)`), *all except* (`All Flights Except 6E135`), or a
-   *departure-time window* (`00:01 TO 09:00 HRS`; windows that cross
-   midnight work). The most specific match wins:
-   specific flights > except / window > route rate.
-3. **Surcharges:** sector and flight surcharges come from the rate row
-   itself. If a remark says the validity has ended, the surcharge is still
-   added but flagged *"ended … – confirm"*. Surcharges limited to one
-   commodity, such as `(PEF)` or `Only for FRUITS…`, are skipped. Network
-   surcharges from **Settings** are added when they are active and valid on
-   that date.
-4. **Add-on:** the per-airline amount set in **Settings**.
-
-A flight is marked **Check** when the app can't decide which rate applies,
-for example a departure time of `0` on a route with time-based rates. It is
-marked **No rate** when the route isn't in the file, and **No tariff** for
-airlines whose rates aren't loaded (Akasa, SpiceJet).
-
-## Setup (Windows, macOS or Linux)
+## Run it
 
 You need Python 3.10 or newer.
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
+streamlit run streamlit_app.py
 ```
 
-Then start **either** front end. Both have the same pages and use the same
-database, so you can switch between them freely:
+It opens at http://localhost:8501. Colleagues on the same network can use
+`http://<your-pc-name>:8501`.
+
+## Keeping it up to date
+
+Everything is in the **Update data** sidebar:
+
+* **New rate files.** Upload each Air India or IndiGo rate list as it
+  arrives, every ~15 days. Files already loaded are skipped. The effective
+  date is read from the file name (e.g. `8.1 6E Eff. 16th Aug 2026.xlsx`),
+  and the dashboard always uses the newest file that is in force today.
+* **Flight schedule workbook.** Upload `ATC_AOC_Flight_Schedule_*.xlsx`
+  whenever the schedule changes. It replaces the flights, and updates your
+  add-on costs (*Add-on Rates* sheet) and network-wide surcharges such as
+  fuel, SS, ex-BOM and festive (*Network Surcharges* sheet). Edit those
+  sheets in Excel and re-upload, just as before.
+
+### First-time load of your full history
+
+To bring in all your past rate files in one go instead of uploading them one
+by one:
 
 ```bash
-streamlit run streamlit_app.py    # Streamlit: opens http://localhost:8501
-python run.py                     # Flask:     http://localhost:5000
+python manage.py import-schedule ATC_AOC_Flight_Schedule_v2-2.xlsx
+python manage.py load-rates "C:\CargoRates\incoming"                  # a folder of rate files
+python manage.py import-legacy "C:\CargoRates\CargoRates.accdb"      # or: copy the old Access database
 ```
 
-To let colleagues on the same network use it, share
-`http://<your-pc-name>:8501` (Streamlit listens on the network by default),
-or start Flask with `python run.py --host 0.0.0.0` and share
-`http://<your-pc-name>:5000`.
+`import-legacy` on an `.accdb` needs Windows with the Microsoft Access
+driver installed.
 
-### Streamlit vs Flask
+## How each flight gets its rate
 
-* **Streamlit** (`streamlit_app.py`): quickest to run and to change, with
-  sortable and searchable tables, and settings edited like a spreadsheet
-  (add, edit and delete rows, then *Save*). Can be hosted free on
-  Streamlit Community Cloud (see below).
-* **Flask** (`run.py`): a classic web app. It loads fast with many users,
-  has links that can be bookmarked or shared for any route or date, and runs
-  on any ordinary web server.
+* The newest rate file in force today is used for each airline.
+* Only general cargo counts: IndiGo GCR / LEAN, Air India GCR / PRIME.
+  Each rate row's condition is read as *all flights*, *these flights*,
+  *all except these flights*, or a *departure-time window* (windows that
+  cross midnight work). The most specific match wins.
+* Surcharges come from the rate file itself (sector and flight) plus the
+  network surcharges in your schedule workbook, checked against their dates.
+  A surcharge whose validity has ended is still added, with a note to
+  confirm it with the airline. Surcharges that apply to one commodity only
+  are skipped.
+* Flights the app can't price confidently, such as a departure time of `0`
+  on a route with time-based rates, appear at the bottom with a note.
 
-### Hosting the Streamlit app on Streamlit Community Cloud
+These rules reproduce the old workbook's *Flight Rates* sheet exactly for
+all 1,630 flights.
 
-Push this repo to GitHub, then at https://share.streamlit.io create an app
-pointing at `streamlit_app.py`. **Be aware:** Community Cloud doesn't keep
-files between restarts. The SQLite database is wiped whenever the app
-restarts or is redeployed, so you would have to re-upload the schedule and
-rate files each time. For a permanent shared copy, run it on an office PC or
-server instead, or ask for the database to be moved to a hosted one
-(e.g. Postgres).
+## Good to know
 
-The data is kept in a single SQLite file, `instance/tariff.sqlite`. Back up
-that file and you've backed up everything. To keep it somewhere else, set the
-`TARIFFAPP_DB` environment variable to another path before starting.
-
-### First-time data load
-
-1. **Upload → Flight schedule workbook**: upload
-   `ATC_AOC_Flight_Schedule_v2-2.xlsx`. This imports the flights (*Raw Data*),
-   station names and hubs (*Lists*), add-on rates and network surcharges.
-2. **Your existing rate history.** Either upload all your old rate-list
-   `.xlsx` files on **Upload → Rate files** (you can select many at once), or
-   copy everything from your existing CargoRates database in one go:
-
-   ```bash
-   flask --app tariffapp import-legacy "C:\CargoRates\CargoRates.accdb"      # Windows, needs pyodbc + Access driver
-   flask --app tariffapp import-legacy cargo_rates_demo.sqlite               # or the SQLite copy
-   ```
-
-### Every ~15 days
-
-Go to **Upload → Rate files** and upload the new file(s). That's it: every
-page uses the new rates straight away. Files that are already loaded are
-skipped. The effective date is read from the filename (e.g.
-`8.1 6E Eff. 16th Aug 2026.xlsx`). If a filename has no date, enter it under
-*Options*.
-
-When the airline notes announce a new network-wide surcharge (fuel, festive,
-ex-station…), add it under **Settings → Network surcharges** with its
-validity dates.
-
-### Command line (optional)
-
-```bash
-flask --app tariffapp load-rates "C:\CargoRates\incoming"       # a folder or individual files
-flask --app tariffapp import-schedule ATC_AOC_Flight_Schedule_v2-2.xlsx
-flask --app tariffapp import-legacy CargoRates.accdb
-```
+* **No login.** Anyone who can open the page can upload files. Keep it on
+  your PC or office network, or limit viewers in the Streamlit Cloud
+  settings.
+* **Streamlit Community Cloud doesn't keep files.** The database
+  (`instance/tariff.sqlite`) is wiped when the app restarts or you push an
+  update, so you'd re-upload the schedule and rate files. For permanent use,
+  run it on an office PC.
+* **Akasa and SpiceJet** show *Tariff not loaded* until a reader for their
+  rate files is added. Send a sample file of each.
 
 ## Project layout
 
 ```
-streamlit_app.py           Streamlit front end
-run.py                     Flask front end
+streamlit_app.py       the dashboard
+manage.py              bulk data commands
 tariffapp/
-  __init__.py              app factory
-  schema.py                database tables (the CargoRates rate tables + schedule/settings tables)
-  db.py                    SQLite connection
-  etl/parsers.py           reads the Air India / IndiGo Excel files (unchanged from CargoRates)
-  etl/loader.py            loads a parsed file into the database
-  importers.py             schedule workbook + legacy database import
-  linker.py                flight → rate matching, surcharges, CPKG (replaces link_rates.py)
-  queries.py               read-side queries shared by both front ends
-  settings_store.py        validated saves for the Settings tables
-  views.py                 Flask pages
-  templates/, static/      HTML + CSS (Chart.js is bundled under static/vendor)
-tests/                     pytest suite: python -m pytest
+  etl/parsers.py       reads the Air India / IndiGo Excel files
+  etl/loader.py        stores a parsed file (every cycle kept, tagged by effective date)
+  importers.py         schedule workbook + old database import
+  linker.py            flight → rate matching, surcharges, cost per kg
+  queries.py, db.py, schema.py
+tests/                 python -m pytest
 ```
-
-## Notes and limits
-
-* **No login.** Anyone who can reach the app can upload files and change
-  settings. Keep it on your own PC or office network. Adding a login is a
-  small change if you ever host it publicly.
-* **Akasa and SpiceJet** show *No tariff* until their rate files can be read.
-  Each airline's Excel layout differs, so adding one means a new reader in
-  `etl/parsers.py`. Send a sample file when you have one.
-* The rate tables keep exactly the CargoRates layout (one table per product
-  per carrier, plus `LoadBatches`), so any queries you wrote against the
-  Access database still work against `instance/tariff.sqlite`.
