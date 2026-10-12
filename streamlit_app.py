@@ -105,6 +105,19 @@ names = {s["Code"]: s["Name"] for s in stations}
 hub_codes = [s["Code"] for s in hubs] or list(names)
 all_codes = list(names)
 ss = st.session_state
+if not ss.get("_from_link"):  # open a shared link like ?from=DEL&to=BOM&kg=250 once per session
+    ss["_from_link"] = True
+    qp = st.query_params
+    if qp.get("from", "").upper() in hub_codes:
+        ss["origin"] = qp["from"].upper()
+    if qp.get("to", "").upper() in all_codes:
+        ss["dest"] = qp["to"].upper()
+    try:
+        if float(qp.get("kg", "")) >= 1:
+            ss["weight"] = float(qp["kg"])
+    except ValueError:
+        pass
+ss.setdefault("weight", 100.0)
 if ss.get("origin") not in hub_codes:
     ss["origin"] = hub_codes[0]
 if ss.get("dest") not in all_codes:
@@ -123,10 +136,11 @@ label = lambda c: f"{c} – {names[c]}" if names.get(c) else c  # noqa: E731
 c1, c2, c3, c4 = st.columns([3, 3, 2, 1], vertical_alignment="bottom")
 origin = c1.selectbox("From", hub_codes, key="origin", format_func=label)
 dest = c2.selectbox("To", all_codes, key="dest", format_func=label)
-weight = c3.number_input("Weight (kg)", min_value=1.0, value=100.0, step=10.0, format="%g", key="weight")
+weight = c3.number_input("Weight (kg)", min_value=1.0, step=10.0, format="%g", key="weight")
 c4.button("⇄", on_click=swap, help="Swap From and To", width="stretch", key="swap")
 if ss.get("_swap_msg"):
     st.warning(ss.pop("_swap_msg"))
+st.query_params.from_dict({"from": origin, "to": dest, "kg": f"{weight:g}"})  # the address bar is a shareable link
 
 eng, results, status, weekly = queries.price_route(conn, origin, dest, today)
 if status == "SAME CITY":
@@ -174,7 +188,7 @@ ties = int((df["_rank"] == best["_rank"]).sum()) if best is not None else 0
 m1, m2, m3, m4 = st.columns(4)
 if best is not None:
     m1.metric("Cheapest flight" if ties == 1 else f"Cheapest (+{ties - 1} at same price)",
-              f"{best['Flight']} · {best['Departs']}", best["Airline"], delta_color="off", delta_arrow="off",
+              best["Flight"], f"{best['Airline']} · departs {best['Departs']}", delta_color="off", delta_arrow="off",
               border=True)
     m2.metric("All-in per kg", f"₹{best['₹/kg all-in']:g}", border=True)
     m3.metric(f"Total for {weight:g} kg", rs(best["Total ₹"]), border=True)
@@ -190,12 +204,15 @@ cheapest = df["_rank"] == (best["_rank"] if best is not None else None)
 shown = df.drop(columns=["_ok", "_rank"])
 
 
-def highlight_best(row):
-    return ["background-color: rgba(46, 160, 90, .20); font-weight: 600" if cheapest[row.name] else ""] * len(row)
+PRICE_COLS = ["₹/kg all-in", "Total ₹"]
+
+
+def highlight_best(col):
+    return ["background-color: rgba(46, 160, 90, .25); font-weight: 600" if cheapest[i] else "" for i in col.index]
 
 
 st.dataframe(
-    shown.style.apply(highlight_best, axis=1), hide_index=True, width="stretch",
+    shown.style.apply(highlight_best, subset=PRICE_COLS), hide_index=True, width="stretch",
     height=min(38 + 35 * len(shown), 640),
     column_config={
         "₹/kg all-in": st.column_config.NumberColumn(format="%g"),

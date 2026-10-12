@@ -25,6 +25,10 @@ streamlit run streamlit_app.py
 It opens at http://localhost:8501. Colleagues on the same network can use
 `http://<your-pc-name>:8501`.
 
+The page address always holds the current route and weight, e.g.
+`http://localhost:8501/?from=DEL&to=BOM&kg=250`. Bookmark it, or send it to
+a colleague to open the same view.
+
 ## Keeping it up to date
 
 Everything is in the **Update data** sidebar:

@@ -37,7 +37,8 @@ def test_route_ranked_cheapest_first(loaded):
     # 6E100 is LEAN (14:00): 100 kg uses the 100+ break, 26 + surcharges 9 + add-on 18 = 53/kg
     assert list(df["Flight"])[0] == "6E100"
     assert df.iloc[0]["₹/kg all-in"] == 53 and df.iloc[0]["Total ₹"] == 5300
-    assert [m.value for m in at.metric][:3] == ["6E100 · 14:00", "₹53", "₹5,300"]
+    assert [m.value for m in at.metric][:3] == ["6E100", "₹53", "₹5,300"]
+    assert at.metric[0].delta == "IndiGo · departs 14:00"
     assert at.metric[3].value == "25"
     # flights without a usable rate sink to the bottom with a note
     tail = df.set_index("Flight").loc[["6E777", "QP1000"], "Note"].tolist()
@@ -62,3 +63,14 @@ def test_swap_and_route_states(loaded):
     assert any("two different cities" in w.value for w in at.warning)
     at = run("BOM", "COK")
     assert any("No nonstop flights" in i.value for i in at.info)
+
+
+def test_shared_link_opens_route_and_weight(loaded):
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.query_params["from"] = "del"
+    at.query_params["to"] = "COK"
+    at.query_params["kg"] = "250"
+    at.run()
+    assert not at.exception
+    assert (at.session_state["origin"], at.session_state["dest"], at.session_state["weight"]) == ("DEL", "COK", 250)
+    assert at.metric[2].label == "Total for 250 kg"
