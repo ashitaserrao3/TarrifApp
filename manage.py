@@ -35,6 +35,8 @@ def main():
     if args.cmd == "sync":
         r = sync.sync_data_folder(conn)
         print(f"Schedule: {r['schedule'] or 'unchanged'}")
+        for h in r["history"]:
+            print(f"History: {h}")
         print(f"Rate files loaded: {len(r['rates_loaded'])}, already loaded: {r['rates_skipped']}")
         for e in r["errors"]:
             print(f"  ERROR {e}")

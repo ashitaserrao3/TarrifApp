@@ -195,9 +195,9 @@ with st.sidebar:
         if st.button("Reload data folder", width="stretch", key="reload"):
             st.cache_resource.clear()
             st.rerun()
-        if sync_result["schedule"] or sync_result["rates_loaded"]:
+        if sync_result["schedule"] or sync_result["rates_loaded"] or sync_result["history"]:
             loaded = [f"schedule {sync_result['schedule']}"] if sync_result["schedule"] else []
-            loaded += sync_result["rates_loaded"]
+            loaded += [f"history {h}" for h in sync_result["history"]] + sync_result["rates_loaded"]
             st.success("Loaded: " + "; ".join(loaded))
         for e in sync_result["errors"]:
             st.error(e)

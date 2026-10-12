@@ -41,7 +41,8 @@ sheets, sort and search. **Only you update the data**, in one of two ways.
 
 ```
 data/schedule/   the ATC/AOC flight-schedule workbook
-data/rates/      every Air India / IndiGo rate-list .xlsx (keep the old ones: they're the history)
+data/rates/      every new Air India / IndiGo rate-list .xlsx
+data/history/    rate history from the old CargoRates database (32 files, Mar–Aug 2026)
 ```
 
 The app loads anything new in this folder when it starts or when a file
@@ -73,11 +74,11 @@ With no password set, uploading inside the app is switched off completely.
 Files uploaded this way are saved into `data/`. On Streamlit Cloud they last
 only until the app restarts, so for anything permanent use option 1.
 
-### First-time load of your full history
+### Your history is already in
 
-Put the workbook in `data/schedule/` and all your past rate files in
-`data/rates/`, then run `python manage.py sync`, or just start the app. You
-can also copy everything from your old Access database at once:
+`data/history/` holds every rate cycle from your old CargoRates database, up
+to Air India 20-Aug-26 and IndiGo 16-Aug-26. From now on, just add each new
+rate file to `data/rates/`. To import another old database yourself:
 `python manage.py import-legacy "C:\CargoRates\CargoRates.accdb"` (needs
 Windows with the Microsoft Access driver).
 

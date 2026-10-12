@@ -38,4 +38,32 @@ def test_sync_loads_new_files_once_and_reimports_changed_schedule(conn, tmp_path
 
 def test_missing_data_folder_is_fine(conn, tmp_path):
     r = sync.sync_data_folder(conn, str(tmp_path / "nope"))
-    assert r == {"schedule": None, "rates_loaded": [], "rates_skipped": 0, "errors": []}
+    assert r == {"schedule": None, "history": [], "rates_loaded": [], "rates_skipped": 0, "errors": []}
+
+
+def test_history_database_is_loaded_once(conn, tmp_path):
+    import gzip
+
+    from tariffapp import db
+
+    # an "old CargoRates database" holding one IndiGo cycle
+    old = tmp_path / "old.sqlite"
+    oc = db.connect(str(old))
+    db.init_schema(oc)
+    oc.execute("INSERT INTO LoadBatches (Carrier, SourceFileName, EffectiveDate, Status) "
+               "VALUES ('IndiGo', '7.0 6E Eff. 01st July 2026.xlsx', '2026-07-01 00:00:00', 'OK')")
+    oc.execute("INSERT INTO IndiGo_GCR (BatchID, EffectiveDate, OriginCode, DestCode, RateN) "
+               "VALUES (1, '2026-07-01 00:00:00', 'AMD', 'DEL', 70)")
+    oc.commit()
+    oc.close()
+    data = tmp_path / "data"
+    (data / "history").mkdir(parents=True)
+    with open(old, "rb") as f, gzip.open(data / "history" / "CargoRates_history.sqlite.gz", "wb") as gz:
+        gz.write(f.read())
+
+    first = sync.sync_data_folder(conn, str(data))
+    assert first["history"] == ["CargoRates_history.sqlite.gz (1 rate files)"] and not first["errors"]
+    assert conn.execute("SELECT RateN FROM IndiGo_GCR WHERE OriginCode='AMD'").fetchone()[0] == 70
+    again = sync.sync_data_folder(conn, str(data))
+    assert again["history"] == []
+    assert conn.execute("SELECT COUNT(*) FROM LoadBatches").fetchone()[0] == 1
