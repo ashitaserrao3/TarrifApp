@@ -118,8 +118,9 @@ all 1,630 flights.
   SpiceJet's fuel, security and commercial surcharges, Star Air's fuel and
   sector surcharges, and Akasa's route and flight surcharges. Akasa's
   commodity-only surcharges (mobiles, silver, flowers and so on) are skipped.
-  Add-on costs for Akasa, SpiceJet and Star Air come from the workbook's
-  *Add-on Rates* sheet; until set there, their CPKG has no add-on.
+  Add-on costs (₹/kg) come from the workbook's *Add-on Rates* sheet:
+  Air India 15.51, IndiGo 17.95, Akasa 13.52, SpiceJet 24. Star Air has
+  none set yet. To change them, edit that sheet and replace the workbook.
 
 ## Project layout
 
