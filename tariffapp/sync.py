@@ -2,6 +2,8 @@
 Load data from the project's data folder - the "backend" way to update the app.
 
     data/schedule/   the ATC/AOC flight-schedule workbook (the newest .xlsx here is used)
+    data/schedule/dgca/  DGCA approved-schedule PDFs, one per airline (used for flights
+                     when present; read once and saved as schedule.csv)
     data/rates/      every Air India / IndiGo rate-list .xlsx you've received
     data/history/    rate history exported from the old CargoRates database
                      (.sqlite or .sqlite.gz) - loaded once, batch by batch
@@ -19,6 +21,7 @@ import os
 import shutil
 import tempfile
 
+from . import dgca
 from .etl.loader import load_rate_file
 from .importers import import_legacy_db, import_schedule_workbook
 
@@ -32,7 +35,7 @@ def data_dir():
 
 XLSX = (".xlsx", ".xlsm")
 HISTORY = (".sqlite", ".sqlite.gz", ".db")
-SUBFOLDERS = {"schedule": XLSX, "rates": XLSX, "history": HISTORY}
+SUBFOLDERS = {"schedule": XLSX, "schedule/dgca": (".pdf", ".csv"), "rates": XLSX, "history": HISTORY}
 
 
 def _files(folder, extensions=XLSX):
@@ -64,7 +67,7 @@ def _sha256(path):
 def sync_data_folder(conn, folder=None) -> dict:
     """Bring the database up to date with the data folder. Returns a summary."""
     folder = folder or data_dir()
-    out = {"schedule": None, "history": [], "rates_loaded": [], "rates_skipped": 0, "errors": []}
+    out = {"schedule": None, "dgca": None, "history": [], "rates_loaded": [], "rates_skipped": 0, "errors": []}
 
     # Old rate history first, so its batches keep their original file names.
     for path in _files(os.path.join(folder, "history"), HISTORY):
@@ -110,6 +113,20 @@ def sync_data_folder(conn, folder=None) -> dict:
             except Exception as e:  # noqa: BLE001 - reported to the caller
                 conn.rollback()
                 out["errors"].append(f"{os.path.basename(path)}: {e}")
+
+    # DGCA schedule PDFs: re-read only when they change (reading takes a few minutes).
+    dgca_dir = os.path.join(folder, "schedule", "dgca")
+    digest = dgca.folder_digest(dgca_dir)
+    if digest:
+        row = conn.execute("SELECT Value FROM AppState WHERE Key = 'dgca_sha256'").fetchone()
+        if not row or row[0] != digest:
+            try:
+                digest, flights = dgca.parse_folder(dgca_dir)
+                n = dgca.import_flights(conn, flights, digest)
+                out["dgca"] = f"DGCA schedule ({n} flight rows)"
+            except Exception as e:  # noqa: BLE001 - reported to the caller
+                conn.rollback()
+                out["errors"].append(f"DGCA schedule: {e}")
 
     for path in _files(os.path.join(folder, "rates")):
         r = load_rate_file(conn, path)

@@ -167,7 +167,11 @@ CREATE TABLE IF NOT EXISTS Flights (
     DepTime      TEXT,
     Mon INTEGER DEFAULT 0, Tue INTEGER DEFAULT 0, Wed INTEGER DEFAULT 0,
     Thu INTEGER DEFAULT 0, Fri INTEGER DEFAULT 0, Sat INTEGER DEFAULT 0,
-    Sun INTEGER DEFAULT 0
+    Sun INTEGER DEFAULT 0,
+    Source         TEXT,   -- 'workbook' (Raw Data sheet) or 'dgca' (DGCA schedule PDFs)
+    EffectiveFrom  TEXT,   -- YYYY-MM-DD; DGCA rows are only valid between these dates
+    EffectiveTo    TEXT,
+    Aircraft       TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_Flights_od ON Flights(Origin, Destination);
 

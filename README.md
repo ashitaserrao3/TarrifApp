@@ -35,7 +35,8 @@ the sidebar. There are two ways to update the data:
 ### 1. From the backend: the `data/` folder (recommended)
 
 ```
-data/schedule/   the ATC/AOC flight-schedule workbook
+data/schedule/   the ATC/AOC flight-schedule workbook (Lists, Add-on Rates, Network Surcharges)
+data/schedule/dgca/  DGCA approved-schedule PDFs, one per airline: the flights shown
 data/rates/      every new Air India / IndiGo rate-list .xlsx
 data/history/    rate history from the old CargoRates database (32 files, Mar–Aug 2026)
 ```
@@ -68,7 +69,25 @@ rate file to `data/rates/`. To import another old database yourself:
 `python manage.py import-legacy "C:\CargoRates\CargoRates.accdb"` (needs
 Windows with the Microsoft Access driver).
 
-## How each flight gets its rate
+## Where the flights come from
+
+The flights come from the **DGCA approved schedule** PDFs in `data/schedule/dgca/`:
+every domestic airline's flights, with flight number, departure time, days of
+operation, and the dates each row is valid. The Dashboard shows the flights
+operating on the day you look. DGCA publishes a new set each season, summer
+(from late March) and winter (from late October), on its digigov portal.
+Download each airline's PDF and replace the old ones, either in GitHub or
+with the sidebar's *Flight schedule* upload. After a season ends, the app keeps
+showing that schedule's last day and warns you in the sidebar until you
+upload the new one.
+
+Reading the PDFs takes a few minutes (the IndiGo file alone is over 100
+pages), so the app does it once and saves the result as
+`data/schedule/dgca/schedule.csv`. It re-reads only when the PDFs change.
+
+Without any DGCA PDFs, the app falls back to the workbook's *Raw Data* sheet.
+
+
 
 * The newest rate file in force today is used for each airline.
 * Only general cargo counts: IndiGo GCR / LEAN, Air India GCR / PRIME.

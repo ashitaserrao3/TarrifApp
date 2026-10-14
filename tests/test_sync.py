@@ -38,7 +38,7 @@ def test_sync_loads_new_files_once_and_reimports_changed_schedule(conn, tmp_path
 
 def test_missing_data_folder_is_fine(conn, tmp_path):
     r = sync.sync_data_folder(conn, str(tmp_path / "nope"))
-    assert r == {"schedule": None, "history": [], "rates_loaded": [], "rates_skipped": 0, "errors": []}
+    assert r == {"schedule": None, "dgca": None, "history": [], "rates_loaded": [], "rates_skipped": 0, "errors": []}
 
 
 def test_history_database_is_loaded_once(conn, tmp_path):

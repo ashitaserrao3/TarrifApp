@@ -24,8 +24,17 @@ def connect(path: str) -> sqlite3.Connection:
     return conn
 
 
+# Columns added after the first release; older databases get them on start-up.
+_ADDED_COLUMNS = {"Flights": ["Source TEXT", "EffectiveFrom TEXT", "EffectiveTo TEXT", "Aircraft TEXT"]}
+
+
 def init_schema(conn: sqlite3.Connection):
     conn.executescript(build_schema_sql())
+    for table, cols in _ADDED_COLUMNS.items():
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for col in cols:
+            if col.split()[0] not in have:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
     if conn.execute("SELECT COUNT(*) FROM Airlines").fetchone()[0] == 0:
         conn.executemany(
             "INSERT INTO Airlines (Code, Name, TariffCarrier, AddOnPerKg, AddOnIncludes) VALUES (?,?,?,?,?)",

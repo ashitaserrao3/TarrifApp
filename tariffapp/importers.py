@@ -154,10 +154,11 @@ def import_schedule_workbook(conn: sqlite3.Connection, path: str, filename: str 
     if not flights:
         raise ValueError("The flight sheet has no flights in it.")
 
-    conn.execute("DELETE FROM Flights")
+    # Only the workbook's own flights are replaced; flights from DGCA schedule PDFs stay.
+    conn.execute("DELETE FROM Flights WHERE COALESCE(Source, 'workbook') = 'workbook'")
     conn.executemany(
-        "INSERT INTO Flights (Origin, Destination, Airline, FlightNo, DepTime, Mon, Tue, Wed, Thu, Fri, Sat, Sun) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", flights)
+        "INSERT INTO Flights (Origin, Destination, Airline, FlightNo, DepTime, Mon, Tue, Wed, Thu, Fri, Sat, Sun, "
+        "Source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'workbook')", flights)
     summary["flights"] = len(flights)
 
     # Airlines seen in the schedule but not known yet -> add without a tariff link

@@ -135,8 +135,11 @@ with st.sidebar:
     st.caption("**Rates in use**")
     for carrier, b in queries.latest_batches(conn).items():
         st.caption(f"{carrier}: eff. {dmy(b['EffectiveDate'])}" if b else f"{carrier}: none loaded")
-    n_flights = conn.execute("SELECT COUNT(*) FROM Flights").fetchone()[0]
-    st.caption(f"Schedule: {n_flights:,} flights")
+    sched_info = queries.schedule_info(conn, today)
+    st.caption(f"Schedule: {sched_info['label']} · {sched_info['flights']:,} flights")
+    if sched_info["expired"]:
+        st.warning(f"The {sched_info['label']} schedule ended on {dmy(sched_info['valid_to'])}. Flights are shown "
+                   "as on its last day. Upload the new season's DGCA schedule PDFs below.")
     st.divider()
 
     st.subheader("Update data")
@@ -150,11 +153,14 @@ with st.sidebar:
             st.cache_resource.clear()
             st.rerun()
     with st.form("schedule", clear_on_submit=True, border=False):
-        sched = st.file_uploader("Flight schedule workbook", type=["xlsx", "xlsm"],
-                                 help="Saved into data/schedule and imported (Raw Data, Lists, Add-on Rates, "
-                                      "Network Surcharges).")
-        if st.form_submit_button("Load schedule", width="stretch", key="load_schedule") and sched:
-            save_to_data_folder(sched, "schedule")
+        scheds = st.file_uploader("Flight schedule (DGCA PDFs or workbook)", type=["pdf", "xlsx", "xlsm"],
+                                  accept_multiple_files=True,
+                                  help="DGCA approved-schedule PDFs (one per airline) give the flights; reading them "
+                                       "takes a few minutes. The workbook gives Lists, Add-on Rates and Network "
+                                       "Surcharges.")
+        if st.form_submit_button("Load schedule", width="stretch", key="load_schedule") and scheds:
+            for f in scheds:
+                save_to_data_folder(f, "schedule/dgca" if f.name.lower().endswith(".pdf") else "schedule")
             ss["_just_uploaded"] = True
             st.cache_resource.clear()
             st.rerun()
@@ -162,9 +168,10 @@ with st.sidebar:
         st.cache_resource.clear()
         st.rerun()
     # Say what was loaded only to the person who just uploaded, not to every visitor.
-    if ss.pop("_just_uploaded", False) and (sync_result["schedule"] or sync_result["rates_loaded"]
-                                            or sync_result["history"]):
+    if ss.pop("_just_uploaded", False) and (sync_result["schedule"] or sync_result["dgca"]
+                                            or sync_result["rates_loaded"] or sync_result["history"]):
         loaded = [f"schedule {sync_result['schedule']}"] if sync_result["schedule"] else []
+        loaded += [sync_result["dgca"]] if sync_result["dgca"] else []
         loaded += [f"history {h}" for h in sync_result["history"]] + sync_result["rates_loaded"]
         st.success("Loaded: " + "; ".join(loaded))
     for e in sync_result["errors"]:
@@ -205,15 +212,17 @@ dest = c[4].selectbox("Destination", all_codes, key="dest", label_visibility="co
 c[5].html(f'<div class="xl xl-name">{esc(names.get(dest))}</div>')
 st.query_params.from_dict({"from": origin, "to": dest})
 
-flights = [dict(r) for r in conn.execute(
-    "SELECT * FROM Flights WHERE Origin=? AND Destination=? ORDER BY FlightID", (origin, dest))]
-results = eng.price_all(flights) if origin != dest else []
+flights = queries.route_flights(conn, origin, dest, today) if origin != dest else []
+results = eng.price_all(flights)
 weekly = sum(queries.weekly_frequency(r.flight) for r in results)
 status = "SAME CITY" if origin == dest else ("ACTIVE" if weekly else "NO SERVICE")
 
 ig, ai = eng.batch("IndiGo"), eng.batch("Air India")
+sched_note = sched_info["label"] + (f" (as on {dmy(sched_info['date'])})"
+                                   if sched_info["date"] and sched_info["date"] != today else "")
 rates_line = (f"Rates: IndiGo eff. {dmy(ig['EffectiveDate']) if ig else '–'}  |  "
-              f"Air India eff. {dmy(ai['EffectiveDate']) if ai else '–'}  |  Linked {dmy(today)}")
+              f"Air India eff. {dmy(ai['EffectiveDate']) if ai else '–'}  |  Schedule: {sched_note}  |  "
+              f"Linked {dmy(today)}")
 msg = {"SAME CITY": "⚠&nbsp; Please select two different cities as Origin and Destination.",
        "NO SERVICE": "✈&nbsp; No nonstop flights currently operate on this route. "
                      "Please try a different Origin / Destination combination."}.get(status, "")
