@@ -39,6 +39,7 @@ data/schedule/   the ATC/AOC flight-schedule workbook (Lists, Add-on Rates, Netw
 data/schedule/dgca/  DGCA approved-schedule PDFs, one per airline: the flights shown
 data/rates/      every airline tariff .xlsx (IndiGo, Air India, Akasa, SpiceJet, Star Air)
 data/history/    rate history from the old CargoRates database (32 files, Mar–Aug 2026)
+data/quotes/     the customer rate quote (.xlsx) and any special-rates PDF sent with it
 ```
 
 The app loads anything new in this folder when it starts or when a file
@@ -68,6 +69,22 @@ to Air India 20-Aug-26 and IndiGo 16-Aug-26. From now on, just add each new
 rate file to `data/rates/`. To import another old database yourself:
 `python manage.py import-legacy "C:\CargoRates\CargoRates.accdb"` (needs
 Windows with the Microsoft Access driver).
+
+## The customer quote
+
+When `data/quotes/` holds a rate quote workbook (for example the Allcargo
+quote), the Dashboard adds a **QUOTE (₹/kg, 100+ kg)** column group next to
+CPKG: discount, base rate, terminal charges & surcharges, master rate and
+console rate for each flight. A line for the flight's own number is used when
+the quote has one; otherwise the route's *ALL* line is used. Where the quote
+says *"as per attached special rates"*, or the special-rates PDF lists the
+route, the special SSP and console rates are shown, marked **SSP**: the
+*Prime* line for prime flights, the *GCR* line for the rest. Under the table
+are the quote's airline charges for the airlines on the route (minimum
+freight, AWB, DO, DC, valuation, discount), followed by the quote's terms. The
+quote's issuer (the lines above the customer's name, and any term naming the
+issuer) is not shown. To replace the quote, put the new files in
+`data/quotes/` or upload them with the sidebar's *Customer rate quote*.
 
 ## Where the flights come from
 

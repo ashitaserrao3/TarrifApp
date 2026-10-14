@@ -19,7 +19,7 @@ import re
 
 import streamlit as st
 
-from tariffapp import database_path, db, queries, sync
+from tariffapp import database_path, db, queries, quotes, sync
 from tariffapp.linker import STATUS_CHECK, STATUS_NO_RATE, STATUS_NO_TARIFF, TariffEngine
 
 st.set_page_config(page_title="Flight Schedule", page_icon="✈", layout="wide")
@@ -29,6 +29,7 @@ NAVY, BLUE, GREEN_DARK = "#1F4E78", "#2E74B5", "#375623"
 BAND, INPUT_YELLOW, STRIPE, GREY_TEXT, MSG_BROWN = "#DCE6F1", "#FFF2CC", "#F2F2F2", "#595959", "#833C0C"
 STATUS_FILL = {"ACTIVE": "#C6E0B4", "NO SERVICE": "#F8CBAD", "SAME CITY": "#FFF2CC"}
 CHECK_AMBER = "#FFE699"
+QUOTE_DARK, QUOTE_LIGHT = "#C65911", "#FCE4D6"
 
 SHEET_CSS = f"""
 <style>
@@ -55,6 +56,16 @@ SHEET_CSS = f"""
 .xl-table td.check {{ background: {CHECK_AMBER} !important; }}
 .xl-table td.muted {{ color: #808080; }}
 .xl-table sup {{ color: #9C5700; font-size: 10px; font-weight: 400; }}
+.xl-table th.qt {{ background: {QUOTE_DARK}; }}
+.xl-table td.qt {{ text-align: center; }}
+.xl-table td.qt.con {{ color: {QUOTE_DARK}; font-weight: 700; font-size: 15px; }}
+.xl-table td.qt.muted {{ color: #808080; white-space: normal; font-size: 12px; }}
+.xl-sub {{ color: {NAVY}; font-weight: 700; font-size: 14px; margin: 14px 0 0; }}
+.xl-charges {{ border-collapse: collapse; font-size: 13px; margin-top: 4px; }}
+.xl-charges th {{ background: {QUOTE_LIGHT}; color: #000; font-weight: 700; padding: 4px 8px; text-align: left;
+                  border: 1px solid #F4B183; white-space: nowrap; }}
+.xl-charges td {{ padding: 4px 8px; border: 1px solid #F4B183; white-space: nowrap; }}
+.xl-terms {{ color: {GREY_TEXT}; font-size: 11px; margin: 4px 0 0; padding-left: 18px; }}
 .xl-note {{ color: {GREY_TEXT}; font-size: 11px; margin-top: 10px; }}
 </style>
 """
@@ -164,15 +175,27 @@ with st.sidebar:
             ss["_just_uploaded"] = True
             st.cache_resource.clear()
             st.rerun()
+    with st.form("quote", clear_on_submit=True, border=False):
+        qfiles = st.file_uploader("Customer rate quote", type=["xlsx", "pdf"], accept_multiple_files=True,
+                                  help="The rate quote workbook (.xlsx) and any special-rates PDF sent with it. "
+                                       "Saved into data/quotes; it replaces a file of the same name.")
+        if st.form_submit_button("Load rate quote", width="stretch", key="load_quote") and qfiles:
+            for f in qfiles:
+                save_to_data_folder(f, "quotes")
+            ss["_just_uploaded"] = True
+            st.cache_resource.clear()
+            st.rerun()
     if st.button("Reload data folder", width="stretch", key="reload"):
         st.cache_resource.clear()
         st.rerun()
     # Say what was loaded only to the person who just uploaded, not to every visitor.
     if ss.pop("_just_uploaded", False) and (sync_result["schedule"] or sync_result["dgca"]
-                                            or sync_result["rates_loaded"] or sync_result["history"]):
+                                            or sync_result["rates_loaded"] or sync_result["history"]
+                                            or sync_result["quotes"]):
         loaded = [f"schedule {sync_result['schedule']}"] if sync_result["schedule"] else []
         loaded += [sync_result["dgca"]] if sync_result["dgca"] else []
         loaded += [f"history {h}" for h in sync_result["history"]] + sync_result["rates_loaded"]
+        loaded += [f"quote {q}" for q in sync_result["quotes"]]
         st.success("Loaded: " + "; ".join(loaded))
     for e in sync_result["errors"]:
         st.error(e)
@@ -221,11 +244,36 @@ sched_note = sched_info["label"] + (f" (as on {dmy(sched_info['date'])})"
                                    if sched_info["date"] and sched_info["date"] != today else "")
 rate_effs = " · ".join(f"{c} {dmy(b['EffectiveDate'])}" for c in queries.CARRIER_TABLES
                       if (b := eng.batch(c)))
-rates_line = f"Rates eff.: {rate_effs or '–'}  |  Schedule: {sched_note}  |  Linked {dmy(today)}"
+quote = quotes.current_quote(conn, today)
+quote_rows = quotes.route_quote(conn, quote["QuoteID"], origin, dest) if quote else {}
+quote_note = f"  |  Quote: {quote['Customer'] or quote['SourceFileName']} w.e.f. {dmy(quote['EffectiveDate'])}" \
+    if quote else ""
+rates_line = f"Rates eff.: {rate_effs or '–'}  |  Schedule: {sched_note}{quote_note}  |  Linked {dmy(today)}"
 msg = {"SAME CITY": "⚠&nbsp; Please select two different cities as Origin and Destination.",
        "NO SERVICE": "✈&nbsp; No nonstop flights currently operate on this route. "
                      "Please try a different Origin / Destination combination."}.get(status, "")
 
+def quote_cells(q):
+    """The quote's five columns for one flight."""
+    if not quote:
+        return ""
+    if not q:
+        return '<td class="qt muted" colspan="5">Not in quote</td>'
+    if q["Console"] is None and q["Base100"] is None:
+        return f'<td class="qt muted" colspan="5">{esc(q["Note"] or "")}</td>'
+    disc = f"{num(q['DiscPct'])}%" if q["DiscPct"] is not None else (
+        f"₹{num(q['DiscPerKg'])}/kg" if q["DiscPerKg"] is not None else "")
+    tip = (f"Quote line: {q['Flight']}" + (f" · tariff N {num(q['RateN'])} / 45+ {num(q['RateQ45'])} / "
+                                         f"100+ {num(q['RateQ100'])}" if q.get("RateQ100") is not None else ""))
+    base = num(q["Base100"]) + ("<sup>SSP</sup>" if q["Special"] else "")
+    if q["Special"]:
+        tip = f"{q['Flight'].title()} special rate (SSP +100 kg); surcharges, X-ray, TSP and AWB charges extra"
+    return (f'<td class="qt">{disc}</td><td class="qt" title="{esc(tip)}">{base}</td>'
+            f'<td class="qt">{num(q["Terminal"])}</td><td class="qt">{num(q["Master100"])}</td>'
+            f'<td class="qt con" title="{esc(tip)}">{num(q["Console"])}</td>')
+
+
+any_special = False
 rows_html = []
 for r in results:
     f = r.flight
@@ -246,20 +294,49 @@ for r in results:
                f"[{r.surcharge_summary or 'none'}] + {num(r.addon or 0)} add-on")
         mark = f"<sup>{used}</sup>" if used != f"{brk}+" else ""
         cells.append(f'<td class="cpkg" title="{esc(tip)}">{num(v)}{mark}</td>')
+    q = quotes.rate_for_flight(quote_rows, f["Airline"], f["FlightNo"], r.product) if quote else None
+    any_special = any_special or bool(q and q["Special"])
     rows_html.append(
         f"<tr><td>{esc(f['Airline'])}</td><td class='c'>{esc(f['FlightNo'])}</td>"
         f"<td class='{pcls}' title='{esc(r.match_note)}'>{esc(product)}</td>"
-        f"<td class='c'>{esc(f['DepTime'])}</td>{''.join(cells)}</tr>")
+        f"<td class='c'>{esc(f['DepTime'])}</td>{''.join(cells)}{quote_cells(q)}</tr>")
 
+quote_legend = (" Quote columns: discount, base rate, terminal charges &amp; surcharges, master rate and console "
+                "rate per kg (100+ kg) from the customer quote; <b>SSP</b> = special rate.") if quote else ""
 route = f"{esc(names.get(origin) or origin)} ({origin})&nbsp; → &nbsp;{esc(names.get(dest) or dest)} ({dest})"
+quote_head = quote_sub = extras = ""
+if quote:
+    quote_head = '<th class="qt" colspan="5">QUOTE &nbsp;(₹/kg, 100+ kg)</th>'
+    quote_sub = ("<th class='qt'>DISC.</th><th class='qt'>BASE</th><th class='qt'>TERM. &amp; SURCH.</th>"
+                 "<th class='qt'>MASTER</th><th class='qt'>CONSOLE</th>")
+    on_route = list(dict.fromkeys(f["Airline"] for f in flights))
+    charge_rows = sorted(quotes.charges(conn, quote["QuoteID"], on_route), key=lambda c: on_route.index(c["Airline"]))
+    if charge_rows:
+        cols = [("AirlineName", "Airline"), ("MinFreight", "Min. freight"), ("AwbCharge", "AWB"),
+                ("DoCharge", "DO"), ("DcCharge", "DC"), ("DryIceCharge", "Dry ice"), ("ValCharge", "Valuation"),
+                ("DiscPct", "Discount"), ("DiscPerKg", "Disc./kg"), ("AwbDiscount", "AWB disc.")]
+        cols = [c for c in cols if any(row[c[0]] for row in charge_rows)]
+        extras += ('<div class="xl-sub">AIRLINE CHARGES (quote)</div><div class="xl-wrap" style="margin-top:0">'
+                   '<table class="xl-charges"><tr>' + "".join(f"<th>{t}</th>" for _, t in cols) + "</tr>"
+                   + "".join("<tr>" + "".join(f"<td>{esc(row[k] or '')}</td>" for k, _ in cols) + "</tr>"
+                             for row in charge_rows) + "</table></div>")
+    terms = quotes.notes(conn, quote["QuoteID"]) if rows_html else []
+    if terms:
+        extras += ('<div class="xl-sub">QUOTE TERMS</div><ul class="xl-terms">'
+                   + "".join(f"<li>{esc(t)}</li>" for t in terms) + "</ul>")
+    special_terms = quotes.notes(conn, quote["QuoteID"], "special") if any_special else []
+    if special_terms:
+        extras += ('<div class="xl-sub">SPECIAL RATES (SSP) TERMS</div><ul class="xl-terms">'
+                   + "".join(f"<li>{esc(t)}</li>" for t in special_terms) + "</ul>")
+
 table = ""
 if rows_html:
     table = f"""
 <div class="xl-wrap"><table class="xl-table">
   <thead>
 <tr><th rowspan="2">AIRLINE</th><th rowspan="2">FLT NO.</th><th rowspan="2">PRODUCT</th><th rowspan="2">ETD</th>
-    <th class="cpkg" colspan="2">CPKG &nbsp;(₹/kg)</th></tr>
-<tr><th class="cpkg">45+ kg</th><th class="cpkg">100+ kg</th></tr>
+    <th class="cpkg" colspan="2">CPKG &nbsp;(₹/kg)</th>{quote_head}</tr>
+<tr><th class="cpkg">45+ kg</th><th class="cpkg">100+ kg</th>{quote_sub}</tr>
   </thead>
   <tbody>{''.join(rows_html)}</tbody>
 </table></div>"""
@@ -276,5 +353,6 @@ st.html(SHEET_CSS + f"""
   {table}
   <div class="xl-note">CPKG (₹/kg) = tariff rate + surcharge + add-on (X-ray/TSP/handling). Hover a CPKG value to see
 its breakdown. Amber product = check the rate condition (hover it to see why). A small <b>N</b> means the tariff
-has no 45+/100+ rate on that route, so the N rate is used.</div>
+has no 45+/100+ rate on that route, so the N rate is used.{quote_legend}</div>
+  {extras}
 </div>""")
