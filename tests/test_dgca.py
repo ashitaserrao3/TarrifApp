@@ -91,3 +91,19 @@ def test_workbook_import_keeps_dgca_flights(conn, tmp_path):
     # with DGCA loaded, the route shows DGCA flights, not the workbook's
     flights = queries.route_flights(conn, "AMD", "DEL", dt.date(2026, 8, 3))
     assert "6E1" not in {f["FlightNo"] for f in flights}
+
+
+def test_multi_stop_flights_do_not_confuse_airport_codes():
+    # IX1521: Kolkata -> Agartala -> Bagdogra; small airports only linked by such flights
+    rows = ROWS + [
+        row("Kolkata", "IX1521", "1234567", *SUMMER, dep_to="IXA", dep_time="11:20"),
+        row("Agartala", "IX1521", "1234567", *SUMMER, arr_from="CCU", arr_time="12:15"),
+        row("Agartala", "IX1521", "1234567", *SUMMER, dep_to="IXB", dep_time="12:55"),
+        row("Bagdogra", "IX1521", "1234567", *SUMMER, arr_from="IXA", arr_time="14:05"),
+        row("Bagdogra", "IX1522", "1234567", *SUMMER, dep_to="IXA", dep_time="14:45"),
+        row("Agartala", "IX1522", "1234567", *SUMMER, arr_from="IXB", arr_time="15:50"),
+        row("Kolkata", "6E900", "1234567", *SUMMER, dep_to="DEL", dep_time="07:00"),
+        row("Delhi", "6E900", "1234567", *SUMMER, arr_from="CCU", arr_time="09:10"),
+    ]
+    codes = dgca.infer_station_codes(rows)
+    assert (codes["Agartala"], codes["Bagdogra"], codes["Kolkata"]) == ("IXA", "IXB", "CCU")

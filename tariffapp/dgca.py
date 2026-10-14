@@ -95,34 +95,40 @@ def parse_pdf(path):
 
 def infer_station_codes(rows):
     """Work out each section's airport code from the flights that link sections.
-    -> {section name: code}"""
-    arrivals_by_flight = defaultdict(list)    # flight -> [(section, from code)]
-    departures_by_flight = defaultdict(list)  # flight -> [(section, to code)]
+    -> {section name: code}
+
+    A flight F leaving section S for D appears in D's section as "Arrival From
+    <code of S>". F may also stop elsewhere (A -> S -> D -> ...), so its other
+    arrivals name other airports. Two exclusions remove those: the code cannot be
+    D (where F is going), and it cannot be an airport F arrives at S from. The
+    reverse holds for flights arriving at S. Votes are then turned into a
+    one-to-one assignment, strongest first, so no two cities share a code."""
+    arr = defaultdict(list)   # flight -> [(section, from code)]
+    dep = defaultdict(list)   # flight -> [(section, to code)]
     for r in rows:
         if _CODE_RE.match(r["arr_from"]):
-            arrivals_by_flight[r["flight"]].append((r["section"], r["arr_from"]))
+            arr[r["flight"]].append((r["section"], r["arr_from"]))
         if _CODE_RE.match(r["dep_to"]):
-            departures_by_flight[r["flight"]].append((r["section"], r["dep_to"]))
+            dep[r["flight"]].append((r["section"], r["dep_to"]))
 
     votes = defaultdict(Counter)
-    for flight, deps in departures_by_flight.items():
-        arrs = arrivals_by_flight.get(flight, [])
-        for sec, to_code in deps:
-            # where this flight arrives, the "from" code names the section it left
-            for arr_sec, from_code in arrs:
-                if arr_sec != sec:
-                    votes[sec][from_code] += 1
-    for flight, arrs in arrivals_by_flight.items():
-        deps = departures_by_flight.get(flight, [])
-        for sec, from_code in arrs:
-            for dep_sec, to_code in deps:
-                if dep_sec != sec:
-                    votes[sec][to_code] += 1
+    for flight in set(arr) | set(dep):
+        a, d = arr.get(flight, []), dep.get(flight, [])
+        for sec in {s for s, _ in a} | {s for s, _ in d}:
+            came_from = {c for s, c in a if s == sec}   # airports F arrives here from
+            going_to = {c for s, c in d if s == sec}    # airports F leaves here for
+            own = set()
+            own |= {c for s, c in a if s != sec}        # elsewhere, "arrived from" this airport (or another stop)
+            own |= {c for s, c in d if s != sec}        # elsewhere, "departs to" this airport (or another stop)
+            for code in own - came_from - going_to:
+                votes[sec][code] += 1
 
-    codes = {}
-    for sec, counter in votes.items():
-        code, n = counter.most_common(1)[0]
-        codes[sec] = code
+    pairs = sorted(((n, sec, code) for sec, c in votes.items() for code, n in c.items()), reverse=True)
+    codes, taken = {}, set()
+    for n, sec, code in pairs:
+        if sec not in codes and code not in taken:
+            codes[sec] = code
+            taken.add(code)
     return codes
 
 
