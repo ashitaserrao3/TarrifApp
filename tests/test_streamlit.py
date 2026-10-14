@@ -30,7 +30,7 @@ def dashboard_rows(at):
     body = sheet_html(at)
     tbody = body.split("<tbody>", 1)[1].split("</tbody>", 1)[0] if "<tbody>" in body else ""
     rows = []
-    for tr in re.findall(r"<tr>(.*?)</tr>", tbody, re.S):
+    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", tbody, re.S):
         cells = [re.sub(r"<sup>.*?</sup>|<[^>]+>", "", td).strip() for td in re.findall(r"<td[^>]*>(.*?)</td>", tr, re.S)]
         rows.append(tuple(cells))
     return rows
@@ -95,3 +95,11 @@ def test_app_builds_itself_from_the_data_folder(db_path, tmp_path):
     assert not at.exception, at.exception
     rows = dashboard_rows(at)
     assert rows == [("INDIGO", "6E1", "GCR", "10:00", "72", "62")]  # 50/40 + fuel 4 + add-on 18
+
+
+def test_lowest_cpkg_row_is_red(loaded):
+    body = sheet_html(run("AMD", "DEL"))
+    tbody = body.split("<tbody>", 1)[1]
+    red = [re.findall(r"<td[^>]*>(.*?)</td>", tr)[1]
+           for tr in re.findall(r'<tr class="lowest"[^>]*>(.*?)</tr>', tbody, re.S)]
+    assert red == ["6E100"]  # 53 at 100+ kg, the cheapest on the route

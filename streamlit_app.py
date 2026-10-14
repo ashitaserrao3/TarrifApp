@@ -29,6 +29,7 @@ NAVY, BLUE, GREEN_DARK = "#1F4E78", "#2E74B5", "#375623"
 BAND, INPUT_YELLOW, STRIPE, GREY_TEXT, MSG_BROWN = "#DCE6F1", "#FFF2CC", "#F2F2F2", "#595959", "#833C0C"
 STATUS_FILL = {"ACTIVE": "#C6E0B4", "NO SERVICE": "#F8CBAD", "SAME CITY": "#FFF2CC"}
 CHECK_AMBER = "#FFE699"
+LOWEST_RED = "#FFC7CE"  # Excel's "light red fill"
 
 SHEET_CSS = f"""
 <style>
@@ -52,6 +53,7 @@ SHEET_CSS = f"""
 .xl-table tbody tr:nth-child(even) td {{ background: {STRIPE}; }}
 .xl-table td.c {{ text-align: center; }}
 .xl-table td.cpkg {{ text-align: center; color: {GREEN_DARK}; font-weight: 700; font-size: 15px; }}
+.xl-table tr.lowest td {{ background: {LOWEST_RED} !important; }}
 .xl-table td.check {{ background: {CHECK_AMBER} !important; }}
 .xl-table td.muted {{ color: #808080; }}
 .xl-table sup {{ color: #9C5700; font-size: 10px; font-weight: 400; }}
@@ -226,6 +228,14 @@ msg = {"SAME CITY": "⚠&nbsp; Please select two different cities as Origin and 
        "NO SERVICE": "✈&nbsp; No nonstop flights currently operate on this route. "
                      "Please try a different Origin / Destination combination."}.get(status, "")
 
+def lowest_key(r):
+    """The CPKG a row is compared on: 100+ kg, else 45+ kg."""
+    return r.cpkg(100)[0] if r.cpkg(100)[0] is not None else r.cpkg(45)[0]
+
+
+priced = [lowest_key(r) for r in results if lowest_key(r) is not None]
+lowest = min(priced) if priced else None
+
 rows_html = []
 for r in results:
     f = r.flight
@@ -246,8 +256,10 @@ for r in results:
                f"[{r.surcharge_summary or 'none'}] + {num(r.addon or 0)} add-on")
         mark = f"<sup>{used}</sup>" if used != f"{brk}+" else ""
         cells.append(f'<td class="cpkg" title="{esc(tip)}">{num(v)}{mark}</td>')
+    tr = '<tr class="lowest" title="Lowest CPKG on this route">' \
+        if lowest is not None and lowest_key(r) == lowest else "<tr>"
     rows_html.append(
-        f"<tr><td>{esc(f['Airline'])}</td><td class='c'>{esc(f['FlightNo'])}</td>"
+        f"{tr}<td>{esc(f['Airline'])}</td><td class='c'>{esc(f['FlightNo'])}</td>"
         f"<td class='{pcls}' title='{esc(r.match_note)}'>{esc(product)}</td>"
         f"<td class='c'>{esc(f['DepTime'])}</td>{''.join(cells)}</tr>")
 
@@ -276,5 +288,6 @@ st.html(SHEET_CSS + f"""
   {table}
   <div class="xl-note">CPKG (₹/kg) = tariff rate + surcharge + add-on (X-ray/TSP/handling). Hover a CPKG value to see
 its breakdown. Amber product = check the rate condition (hover it to see why). A small <b>N</b> means the tariff
-has no 45+/100+ rate on that route, so the N rate is used.</div>
+has no 45+/100+ rate on that route, so the N rate is used. <span style="background:{LOWEST_RED};padding:0 4px">Red
+row</span> = lowest CPKG on the route (100+ kg).</div>
 </div>""")
