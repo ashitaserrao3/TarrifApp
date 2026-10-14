@@ -214,6 +214,26 @@ dest = c[4].selectbox("Destination", all_codes, key="dest", label_visibility="co
 c[5].html(f'<div class="xl xl-name">{esc(names.get(dest))}</div>')
 st.query_params.from_dict({"from": origin, "to": dest})
 
+# Add-ons (X-ray, TSP, handling...): defaults from the workbook's Add-on Rates sheet; anyone can try their
+# own values here. Only CPKG changes - tariff and surcharges (fuel, sector...) stay as they are.
+addon_airlines = [(code, a["TariffCarrier"], a["AddOnPerKg"] or 0.0) for code, a in eng.airlines.items()
+                  if a.get("TariffCarrier")]
+addon_airlines.sort(key=lambda x: list(queries.CARRIER_TABLES).index(x[1])
+                    if x[1] in queries.CARRIER_TABLES else 99)
+for code, _, default in addon_airlines:
+    ss.setdefault(f"addon_{code}", float(default))
+custom = [code for code, _, default in addon_airlines if ss[f"addon_{code}"] != float(default)]
+with st.expander("Add-on ₹/kg (X-ray, TSP, handling)" + (" · your own values" if custom else ""),
+                 expanded=bool(custom)):
+    cols = st.columns(len(addon_airlines) + 1, vertical_alignment="bottom")
+    for col, (code, carrier, default) in zip(cols, addon_airlines):
+        col.number_input(carrier, min_value=0.0, step=0.5, format="%.2f", key=f"addon_{code}",
+                         help=f"Default {default:g} (from the workbook's Add-on Rates sheet)")
+    cols[-1].button("Reset", width="stretch", key="addon_reset", disabled=not custom,
+                    on_click=lambda: ss.update({f"addon_{c}": float(d) for c, _, d in addon_airlines}))
+for code, _, _ in addon_airlines:
+    eng.airlines[code]["AddOnPerKg"] = ss[f"addon_{code}"]
+
 flights = queries.route_flights(conn, origin, dest, today) if origin != dest else []
 results = eng.price_all(flights)
 weekly = sum(queries.weekly_frequency(r.flight) for r in results)

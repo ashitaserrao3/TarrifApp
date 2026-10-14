@@ -121,6 +121,11 @@ all 1,630 flights.
   Add-on costs (₹/kg) come from the workbook's *Add-on Rates* sheet:
   Air India 15.51, IndiGo 17.95, Akasa 13.52, SpiceJet 24. Star Air has
   none set yet. To change them, edit that sheet and replace the workbook.
+  To try other add-ons, open **Add-on ₹/kg** under the Origin/Destination
+  boxes and type your own value for any airline; CPKG and the red
+  lowest-CPKG row update at once. Tariff and surcharges (fuel, sector...)
+  stay as they are. Your values apply only to your own browser session;
+  **Reset** brings back the workbook's values.
 
 ## Project layout
 

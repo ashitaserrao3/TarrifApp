@@ -103,3 +103,18 @@ def test_lowest_cpkg_row_is_red(loaded):
     red = [re.findall(r"<td[^>]*>(.*?)</td>", tr)[1]
            for tr in re.findall(r'<tr class="lowest"[^>]*>(.*?)</tr>', tbody, re.S)]
     assert red == ["6E100"]  # 53 at 100+ kg, the cheapest on the route
+
+
+def test_own_add_ons_recalculate_cpkg(loaded):
+    at = run("AMD", "DEL")
+    labels = [n.label for n in at.number_input]
+    assert labels == ["Air India", "IndiGo"]  # airlines with a tariff loaded, defaults from the workbook
+    assert at.number_input(key="addon_INDIGO").value == 18
+    at.number_input(key="addon_INDIGO").set_value(10).run()
+    assert not at.exception, at.exception
+    rows = {r[1]: r for r in dashboard_rows(at)}
+    # 6E100 LEAN: 45+ = 55 + surcharges 9 + add-on 10; 100+ = 26 + 9 + 10
+    assert rows["6E100"][4:] == ("74", "45")
+    at.button(key="addon_reset").click().run()
+    assert at.number_input(key="addon_INDIGO").value == 18
+    assert {r[1]: r for r in dashboard_rows(at)}["6E100"][4:] == ("82", "53")
