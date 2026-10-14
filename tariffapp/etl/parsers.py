@@ -26,9 +26,9 @@ _MONTHS = {
 
 # Matches things like:
 #   "01-Mar-26", "12-Aug-26", "effective12-Aug-26"
-#   "01st March 2026", "16th April 2026", "7th May 2026", "01stAug2026"
+#   "01st March 2026", "16th April 2026", "7th May 2026", "01stAug2026", "01st_Oct_2026"
 _DATE_RE = re.compile(
-    r"(\d{1,2})(?:st|nd|rd|th)?[\s\-]*([A-Za-z]{3,9})[\s\-]*(\d{2,4})"
+    r"(\d{1,2})(?:st|nd|rd|th)?[\s\-_.]*([A-Za-z]{3,9})[\s\-_.,]*(\d{2,4})"
 )
 
 
@@ -53,14 +53,39 @@ def parse_effective_date(filename: str) -> "dt.date | None":
     return None
 
 
+def find_effective_date_in_workbook(path) -> "dt.date | None":
+    """For files whose name carries no date (e.g. Star Air '...W.E.F. 8TH JUNE-UFN'): look for
+    'EFF 08th June 2026' / 'EFFECTIVE : 29-Jul-2026' in the first rows of each sheet."""
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    try:
+        for ws in wb.worksheets:
+            for row in ws.iter_rows(min_row=1, max_row=6, values_only=True):
+                for v in row:
+                    if isinstance(v, str) and re.search(r"\b(eff|effective|w\.?e\.?f)", v, re.I):
+                        d = parse_effective_date(v)
+                        if d:
+                            return d
+    finally:
+        wb.close()
+    return None
+
+
 def detect_carrier(filename: str, sheet_names: list) -> str:
-    """Air India files have a 'Tariff Sheet'; IndiGo files have 'GCR+LEAN...'."""
+    """Air India files have a 'Tariff Sheet'; IndiGo files have 'GCR+LEAN...'; Akasa an 'OCDC' sheet;
+    SpiceJet 'PRIME FLIGHTS' + 'VIA FLIGHTS RATES'; Star Air 'GCR &PER PUBLISHED RATES'."""
     lower_sheets = [s.lower() for s in sheet_names]
+    fn = filename.lower()
     if any("tariff sheet" in s for s in lower_sheets):
         return "Air India"
     if any("gcr" in s and "lean" in s for s in lower_sheets):
         return "IndiGo"
-    fn = filename.lower()
+    if "akasa" in fn or any(s.strip() == "ocdc" for s in lower_sheets):
+        return "Akasa"
+    if "spicejet" in fn or re.match(r"^sg[\s_]", fn) or (
+            any("prime flights" in s for s in lower_sheets) and any("via flights" in s for s in lower_sheets)):
+        return "SpiceJet"
+    if "star air" in fn or "starair" in fn or any("per published" in s for s in lower_sheets):
+        return "Star Air"
     if "air india" in fn or "airindia" in fn:
         return "Air India"
     if "indigo" in fn or "6e" in fn:
@@ -413,4 +438,242 @@ def read_indigo(path):
     for rec in out["rates"]:
         rec["_Table"] = classify_indigo(rec.get("SourceSheet"), rec.get("RateCategory"))
 
+    return out
+
+
+# ============================================================================
+# Akasa, SpiceJet and Star Air - one generic table reader, keyed by header text
+# ============================================================================
+
+AKASA_TABLES = ["GCR", "PRIME", "Other"]
+SPICEJET_TABLES = ["GCR", "PRIME", "LEAN", "Other"]
+STARAIR_TABLES = ["GCR", "Other"]
+
+# Rate-table columns for these carriers (IndiGo's layout plus a 250 kg break and remarks).
+GENERIC_RATE_COLUMNS = [
+    "Region", "OriginCode", "DestCode", "RateCategory", "MinCharge", "RateN",
+    "RateQ45", "RateQ100", "RateQ250", "RateQ300", "RateQ500", "RateQ1000",
+    "ApplicableFlights", "ApplicableCommodity", "SectorSurcharge",
+    "FlightSurcharge", "CommoditySurcharge", "Remarks", "SourceSheet",
+]
+
+_GENERIC_HEADERS = {   # header text with spaces removed, lower case
+    "OriginCode": {"origin", "org", "origincode"},
+    "DestCode": {"destination", "dest", "destinationcode"},
+    "RateCategory": {"type", "category"},
+    "MinCharge": {"min", "minimum"},
+    "RateN": {"n", "nrate", "normal", "normalrate"},
+    "RateQ45": {"+45", "45+", "45", "q45"},
+    "RateQ100": {"+100", "100+", "100", "q100"},
+    "RateQ250": {"+250", "250+", "250", "q250"},
+    "RateQ300": {"+300", "300+", "300", "q300"},
+    "RateQ500": {"+500", "500+", "500", "q500"},
+    "RateQ1000": {"+1000", "1000+", "1000", "q1000"},
+    "ApplicableFlights": {"flightno", "fltno", "flight", "flights", "applicableflights"},
+    "ApplicableCommodity": {"commodity"},
+    "Surcharge": {"surcharge"},
+    "Remarks": {"remark", "remarks"},
+}
+_GENERIC_NUMERIC = {"MinCharge", "RateN", "RateQ45", "RateQ100", "RateQ250", "RateQ300", "RateQ500", "RateQ1000"}
+_CODE3 = re.compile(r"^[A-Z]{3}$")
+
+
+def _generic_rows(ws, sheet_label):
+    """Rows of a rate sheet whose header row has Origin/ORG and Destination/DEST columns."""
+    header_row, colmap = None, {}
+    for r, row in enumerate(ws.iter_rows(min_row=1, max_row=12, values_only=True), start=1):
+        keys = [re.sub(r"\s+", "", str(v)).lower() if v is not None else "" for v in row]
+        cm = {}
+        for c, k in enumerate(keys):
+            for field, aliases in _GENERIC_HEADERS.items():
+                if k in aliases and field not in cm:
+                    cm[field] = c
+        if "OriginCode" in cm and "DestCode" in cm and "RateN" in cm:
+            header_row, colmap = r, cm
+            break
+    if header_row is None:
+        return []
+    out = []
+    for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+        def get(f):
+            c = colmap.get(f)
+            v = row[c] if c is not None and c < len(row) else None
+            if isinstance(v, str):
+                v = " ".join(v.split()) or None
+            return v
+        o, d = (str(get("OriginCode") or "").strip().upper(), str(get("DestCode") or "").strip().upper())
+        if not (_CODE3.match(o) and _CODE3.match(d)):
+            continue
+        rec = {f: None for f in GENERIC_RATE_COLUMNS}
+        rec.update(OriginCode=o, DestCode=d, SourceSheet=sheet_label)
+        for f in ("RateCategory", "ApplicableFlights", "ApplicableCommodity", "Remarks"):
+            v = get(f)
+            rec[f] = str(v) if v is not None else None
+        for f in _GENERIC_NUMERIC:
+            rec[f] = _num(get(f))
+        if rec["RateN"] is None and rec["RateQ45"] is None:
+            continue
+        rec["_Surcharge"] = get("Surcharge")
+        out.append(rec)
+    return out
+
+
+def _all_word(v):
+    return v is None or str(v).strip().lower() in ("", "all", "all flights", "gcr", "general")
+
+
+def read_akasa(path):
+    wb = openpyxl.load_workbook(path, data_only=True)
+    out = {"rates": [], "surcharges": []}
+    for ws in wb.worksheets:
+        if ws.title.strip().lower() in ("ocdc", "surcharges", "terms & conditions"):
+            continue
+        for rec in _generic_rows(ws, ws.title):
+            cat = (rec["RateCategory"] or "").strip().lower()
+            rec["_Table"] = "PRIME" if cat == "prime" else ("GCR" if cat in ("gcr", "") else "Other")
+            if rec["_Table"] == "GCR" and _all_word(rec["ApplicableFlights"]):
+                rec["ApplicableFlights"] = None
+            out["rates"].append(rec)
+    sur = next((n for n in wb.sheetnames if n.strip().lower() == "surcharges"), None)
+    if sur:
+        out["surcharges"] = _akasa_surcharges(wb[sur])
+    return out
+
+
+def _akasa_surcharges(ws):
+    """Akasa's surcharge list mixes general and commodity-only charges. Keep the ones that
+    apply to general cargo: no commodity named, and the 'flight' column holding flight
+    numbers, an exclusion, or nothing (not a commodity code list like 'PER / PEF')."""
+    rows = list(ws.iter_rows(values_only=True))
+    hdr = next((i for i, r in enumerate(rows) if r and any(str(v).strip().upper() == "ORIGIN" for v in r if v)), None)
+    if hdr is None:
+        return []
+    names = [re.sub(r"\s+", " ", str(v)).strip().upper() if v else "" for v in rows[hdr]]
+    col = lambda *keys: next((i for i, n in enumerate(names) if any(n.startswith(k) for k in keys)), None)  # noqa: E731
+    c_o, c_d, c_f, c_c = col("ORIGIN"), col("DEST"), col("FLIGHT"), col("COMMODITY")
+    c_from, c_to, c_rate = col("FROM"), col("TO DATE"), col("RATE")
+    flight_re = re.compile(r"(?<![A-Z0-9])QP\s*-?\s*(\d{3,4})", re.I)
+    out = []
+    for r in rows[hdr + 1:]:
+        r = list(r) + [None] * 14
+        m = re.search(r"\d+(\.\d+)?", str(r[c_rate] or "")) if c_rate is not None else None
+        rate = float(m.group()) if m else None   # 'Rs.10/-' -> 10
+        if not rate:
+            continue
+        commodity = str(r[c_c] or "").strip() if c_c is not None else ""
+        ftxt = " ".join(str(r[c_f] or "").split())
+        if re.search(r"excl", commodity, re.I):        # 'EXCLUDING QP1804' typed in the commodity column
+            ftxt, commodity = (ftxt + " " + commodity).strip(), ""
+        if commodity and commodity.lower() not in ("all", "general"):
+            continue                                   # commodity-only surcharge
+        flights = [f"QP{int(n)}" for n in flight_re.findall(ftxt)]
+        excl = bool(re.search(r"excl", ftxt, re.I))
+        if ftxt and not flights and not excl and ftxt.lower() != "all":
+            continue                                   # e.g. 'PER / PEF', '(Special Cargo i.e. AVI,...)'
+        o = str(r[c_o] or "").strip().upper()
+        d = str(r[c_d] or "").strip().upper()
+        rec = {"Origins": None if o in ("", "ALL") else o, "Destinations": None if d in ("", "ALL") else d,
+               "ExceptOrigins": None, "Flights": None, "ExceptFlights": None, "RatePerKg": rate,
+               "Label": "Akasa surcharge", "Reason": f"Akasa surcharge Rs {rate:g}/kg"
+                                                    + (f" ({ftxt})" if ftxt else ""),
+               "ValidFrom": _iso_date(r[c_from]) if c_from is not None else None,
+               "ValidTo": _iso_date(r[c_to]) if c_to is not None else None}
+        if excl:
+            codes = [c for c in re.findall(r"\b[A-Z]{3}\b", ftxt.upper()) if c not in ("ALL", "EXC")]
+            if flights:
+                rec["ExceptFlights"] = ",".join(flights)
+            elif codes:
+                rec["ExceptOrigins"] = ",".join(codes)    # e.g. 'BOM excluded', 'EXCLUDED CCU to IXZ'
+        elif flights:
+            rec["Flights"] = ",".join(flights)
+        out.append(rec)
+    return out
+
+
+def _iso_date(v):
+    if isinstance(v, dt.datetime):
+        return v.date().isoformat()
+    if isinstance(v, dt.date):
+        return v.isoformat()
+    return None  # 'UFN' (until further notice) and blanks
+
+
+def read_spicejet(path):
+    wb = openpyxl.load_workbook(path, data_only=True)
+    out = {"rates": [], "surcharges": []}
+    for ws in wb.worksheets:
+        t = ws.title.strip().lower()
+        if "prime" in t:
+            table = "PRIME"
+        elif "lean" in t:
+            table = "LEAN"
+        elif t == "gcr":
+            table = "GCR"
+        else:
+            continue  # SCR (city names, commodity-specific), VIA (connecting), handling and CUT sheets
+        for rec in _generic_rows(ws, ws.title):
+            rec["_Table"] = table
+            if _all_word(rec["ApplicableCommodity"]):
+                rec["ApplicableCommodity"] = None
+            if table == "GCR" and _all_word(rec["ApplicableFlights"]):
+                rec["ApplicableFlights"] = None
+            amt = _num(rec.pop("_Surcharge", None))
+            if amt:
+                key = "FlightSurcharge" if rec["ApplicableFlights"] else "SectorSurcharge"
+                rec[key] = f"INR {amt:g} / KG"
+            out["rates"].append(rec)
+    for ws in wb.worksheets:
+        if "handling" not in ws.title.lower():
+            continue
+        for row in ws.iter_rows(values_only=True):
+            cells = [str(v).strip() for v in row if v is not None and str(v).strip()]
+            if len(cells) < 2:
+                continue
+            name, rate = cells[0].lower(), _num(re.search(r"\d+(\.\d+)?", cells[1]).group()) \
+                if re.search(r"\d", cells[1]) else None
+            if not rate or "surcharge" not in name:
+                continue
+            label = "Fuel" if "fuel" in name else ("Security" if "security" in name else
+                                                   ("Commercial" if "commercial" in name else "Surcharge"))
+            origins = None
+            rest = " ".join(cells[2:])
+            m = re.search(r"from\s*:?\s*([A-Z ,]+)", rest, re.I)
+            if m:
+                origins = ",".join(re.findall(r"\b[A-Z]{3}\b", m.group(1).upper())) or None
+            out["surcharges"].append({
+                "Origins": origins, "Destinations": None, "ExceptOrigins": None, "Flights": None,
+                "ExceptFlights": None, "RatePerKg": rate, "Label": label,
+                "Reason": f"SpiceJet {cells[0]} INR {rate:g}/kg" + (f" (from {origins})" if origins else ""),
+                "ValidFrom": None, "ValidTo": None})
+    return out
+
+
+def read_starair(path):
+    wb = openpyxl.load_workbook(path, data_only=True)
+    out = {"rates": [], "surcharges": []}
+    for ws in wb.worksheets:
+        t = ws.title.lower()
+        if "published" in t or "gcr" in t:
+            for rec in _generic_rows(ws, ws.title):
+                cat = (rec["RateCategory"] or "").strip().upper()
+                rec["_Table"] = "GCR" if cat in ("GEN", "GCR", "") else "Other"
+                rec["ApplicableCommodity"] = None if rec["_Table"] == "GCR" else rec["ApplicableCommodity"]
+                rec.pop("_Surcharge", None)
+                out["rates"].append(rec)
+        elif "foot" in t:
+            for row in ws.iter_rows(values_only=True):
+                cells = [str(v).strip() for v in row if v is not None and str(v).strip()]
+                if len(cells) < 2 or "surcharge" not in cells[0].lower():
+                    continue
+                m = re.search(r"rs\.?\s*(\d+(\.\d+)?)", cells[1], re.I)
+                if not m or not re.search(r"all\s+sectors", cells[1], re.I):
+                    continue
+                rate = float(m.group(1))
+                label = "Fuel" if "fuel" in cells[0].lower() else ("Sector" if "sector" in cells[0].lower()
+                                                                   else "Surcharge")
+                out["surcharges"].append({
+                    "Origins": None, "Destinations": None, "ExceptOrigins": None, "Flights": None,
+                    "ExceptFlights": None, "RatePerKg": rate, "Label": label,
+                    "Reason": f"Star Air {cells[0]} Rs {rate:g}/kg on all sectors",
+                    "ValidFrom": None, "ValidTo": None})
     return out

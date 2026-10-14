@@ -11,8 +11,19 @@ network-wide surcharges that used to live in the Excel workbook.
 AIRINDIA_TABLES = ["GCR", "PRIME", "SCR", "HEA", "Other"]
 INDIGO_TABLES = ["GCR", "LEAN", "SCR", "HEA", "XPS", "DGR", "RFL", "RLI", "Other"]
 
-CARRIER_PREFIX = {"Air India": "AirIndia", "IndiGo": "IndiGo"}
-CARRIER_TABLES = {"Air India": AIRINDIA_TABLES, "IndiGo": INDIGO_TABLES}
+AKASA_TABLES = ["GCR", "PRIME", "Other"]
+SPICEJET_TABLES = ["GCR", "PRIME", "LEAN", "Other"]
+STARAIR_TABLES = ["GCR", "Other"]
+
+CARRIER_PREFIX = {"Air India": "AirIndia", "IndiGo": "IndiGo", "Akasa": "Akasa", "SpiceJet": "SpiceJet",
+                  "Star Air": "StarAir"}
+CARRIER_TABLES = {"Air India": AIRINDIA_TABLES, "IndiGo": INDIGO_TABLES, "Akasa": AKASA_TABLES,
+                  "SpiceJet": SPICEJET_TABLES, "Star Air": STARAIR_TABLES}
+# Carriers whose files are read by the generic reader (parsers.read_akasa / read_spicejet / read_starair)
+GENERIC_CARRIERS = {"Akasa": AKASA_TABLES, "SpiceJet": SPICEJET_TABLES, "Star Air": STARAIR_TABLES}
+# Airline code in the schedule -> tariff carrier
+AIRLINE_CARRIER = {"INDIGO": "IndiGo", "AIRINDIA": "Air India", "AKASA": "Akasa", "SPICEJET": "SpiceJet",
+                   "STARAIR": "Star Air"}
 
 _AIRINDIA_RATE_COLS = """
     RateID                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,6 +73,32 @@ _INDIGO_RATE_COLS = """
 """
 
 
+_GENERIC_RATE_COLS = """
+    RateID               INTEGER PRIMARY KEY AUTOINCREMENT,
+    BatchID              INTEGER NOT NULL REFERENCES LoadBatches(BatchID) ON DELETE CASCADE,
+    EffectiveDate        TEXT,
+    Region               TEXT,
+    OriginCode           TEXT,
+    DestCode             TEXT,
+    RateCategory         TEXT,
+    MinCharge            REAL,
+    RateN                REAL,
+    RateQ45              REAL,
+    RateQ100             REAL,
+    RateQ250             REAL,
+    RateQ300             REAL,
+    RateQ500             REAL,
+    RateQ1000            REAL,
+    ApplicableFlights    TEXT,
+    ApplicableCommodity  TEXT,
+    SectorSurcharge      TEXT,
+    FlightSurcharge      TEXT,
+    CommoditySurcharge   TEXT,
+    Remarks              TEXT,
+    SourceSheet          TEXT
+"""
+
+
 def rate_table_names():
     names = []
     for carrier, suffixes in CARRIER_TABLES.items():
@@ -93,7 +130,32 @@ CREATE TABLE IF NOT EXISTS LoadBatches (
         parts.append(f"CREATE INDEX IF NOT EXISTS ix_{t}_lane ON {t}(BatchID, OriginCode, DestCode);")
         parts.append(f"CREATE INDEX IF NOT EXISTS ix_{t}_od ON {t}(OriginCode, DestCode);")
 
+    for carrier, suffixes in GENERIC_CARRIERS.items():
+        for suffix in suffixes:
+            t = f"{CARRIER_PREFIX[carrier]}_{suffix}"
+            parts.append(f"CREATE TABLE IF NOT EXISTS {t} ({_GENERIC_RATE_COLS});")
+            parts.append(f"CREATE INDEX IF NOT EXISTS ix_{t}_lane ON {t}(BatchID, OriginCode, DestCode);")
+            parts.append(f"CREATE INDEX IF NOT EXISTS ix_{t}_od ON {t}(OriginCode, DestCode);")
+
     parts.append("""
+-- Surcharges stated in a carrier's tariff file (fuel, security, route and flight surcharges),
+-- kept with the file they came from so they change when a new file is loaded.
+-- Comma lists; empty = any. ExceptOrigins / ExceptFlights exclude.
+CREATE TABLE IF NOT EXISTS BatchSurcharges (
+    SurchargeID    INTEGER PRIMARY KEY AUTOINCREMENT,
+    BatchID        INTEGER NOT NULL REFERENCES LoadBatches(BatchID) ON DELETE CASCADE,
+    Origins        TEXT,
+    Destinations   TEXT,
+    ExceptOrigins  TEXT,
+    Flights        TEXT,
+    ExceptFlights  TEXT,
+    RatePerKg      REAL NOT NULL,
+    Label          TEXT,
+    Reason         TEXT,
+    ValidFrom      TEXT,
+    ValidTo        TEXT
+);
+
 CREATE TABLE IF NOT EXISTS AirIndia_CommodityCodes (
     CommodityCodeID  INTEGER PRIMARY KEY AUTOINCREMENT,
     BatchID          INTEGER REFERENCES LoadBatches(BatchID) ON DELETE CASCADE,

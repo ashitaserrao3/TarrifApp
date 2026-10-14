@@ -37,7 +37,7 @@ the sidebar. There are two ways to update the data:
 ```
 data/schedule/   the ATC/AOC flight-schedule workbook (Lists, Add-on Rates, Network Surcharges)
 data/schedule/dgca/  DGCA approved-schedule PDFs, one per airline: the flights shown
-data/rates/      every new Air India / IndiGo rate-list .xlsx
+data/rates/      every airline tariff .xlsx (IndiGo, Air India, Akasa, SpiceJet, Star Air)
 data/history/    rate history from the old CargoRates database (32 files, Mar–Aug 2026)
 ```
 
@@ -113,8 +113,13 @@ all 1,630 flights.
   The database is rebuilt from the `data/` folder after a restart. The first
   visitor after a restart waits while it loads, which can take a minute with
   many rate files. That's why updates should go into `data/` in GitHub.
-* **Akasa and SpiceJet** show *Tariff not loaded* until a reader for their
-  rate files is added. Send a sample file of each.
+* **Airlines with tariffs:** IndiGo, Air India and Air India Express, Akasa,
+  SpiceJet and Star Air. Each carrier's surcharges are read from its own file:
+  SpiceJet's fuel, security and commercial surcharges, Star Air's fuel and
+  sector surcharges, and Akasa's route and flight surcharges. Akasa's
+  commodity-only surcharges (mobiles, silver, flowers and so on) are skipped.
+  Add-on costs for Akasa, SpiceJet and Star Air come from the workbook's
+  *Add-on Rates* sheet; until set there, their CPKG has no add-on.
 
 ## Project layout
 

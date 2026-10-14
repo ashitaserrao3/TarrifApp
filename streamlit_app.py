@@ -144,8 +144,8 @@ with st.sidebar:
 
     st.subheader("Update data")
     with st.form("rates", clear_on_submit=True, border=False):
-        files = st.file_uploader("New Air India / IndiGo rate files", type=["xlsx"], accept_multiple_files=True,
-                                 help="Saved into data/rates and loaded. Files already loaded are skipped.")
+        files = st.file_uploader("New airline rate files", type=["xlsx"], accept_multiple_files=True,
+                                 help="IndiGo, Air India, Akasa, SpiceJet or Star Air tariff (.xlsx). Saved into data/rates and loaded; files already loaded are skipped.")
         if st.form_submit_button("Load rate files", width="stretch", key="load_rates") and files:
             for f in files:
                 save_to_data_folder(f, "rates")
@@ -217,12 +217,11 @@ results = eng.price_all(flights)
 weekly = sum(queries.weekly_frequency(r.flight) for r in results)
 status = "SAME CITY" if origin == dest else ("ACTIVE" if weekly else "NO SERVICE")
 
-ig, ai = eng.batch("IndiGo"), eng.batch("Air India")
 sched_note = sched_info["label"] + (f" (as on {dmy(sched_info['date'])})"
                                    if sched_info["date"] and sched_info["date"] != today else "")
-rates_line = (f"Rates: IndiGo eff. {dmy(ig['EffectiveDate']) if ig else '–'}  |  "
-              f"Air India eff. {dmy(ai['EffectiveDate']) if ai else '–'}  |  Schedule: {sched_note}  |  "
-              f"Linked {dmy(today)}")
+rate_effs = " · ".join(f"{c} {dmy(b['EffectiveDate'])}" for c in queries.CARRIER_TABLES
+                      if (b := eng.batch(c)))
+rates_line = f"Rates eff.: {rate_effs or '–'}  |  Schedule: {sched_note}  |  Linked {dmy(today)}"
 msg = {"SAME CITY": "⚠&nbsp; Please select two different cities as Origin and Destination.",
        "NO SERVICE": "✈&nbsp; No nonstop flights currently operate on this route. "
                      "Please try a different Origin / Destination combination."}.get(status, "")

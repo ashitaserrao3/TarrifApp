@@ -14,6 +14,11 @@ import sqlite3
 import openpyxl
 
 from . import parsers
+from ..schema import AIRLINE_CARRIER, CARRIER_PREFIX, GENERIC_CARRIERS
+
+_GENERIC_READERS = {"Akasa": parsers.read_akasa, "SpiceJet": parsers.read_spicejet, "Star Air": parsers.read_starair}
+_SURCHARGE_COLUMNS = ["BatchID", "Origins", "Destinations", "ExceptOrigins", "Flights", "ExceptFlights",
+                      "RatePerKg", "Label", "Reason", "ValidFrom", "ValidTo"]
 
 
 def _iso(d):
@@ -59,7 +64,13 @@ def load_rate_file(conn: sqlite3.Connection, filepath: str, filename: str = None
         return result
 
     if eff_date is None:
-        result["warnings"].append("Could not find an effective date in the filename.")
+        try:
+            eff_date = parsers.find_effective_date_in_workbook(filepath)   # e.g. 'EFF 08th June 2026' in a title
+        except Exception:  # noqa: BLE001 - unreadable file: reported below
+            eff_date = None
+        result["effective_date"] = eff_date
+    if eff_date is None:
+        result["warnings"].append("Could not find an effective date in the filename or the file.")
     eff = _iso(eff_date)
 
     try:
@@ -105,8 +116,23 @@ def load_rate_file(conn: sqlite3.Connection, filepath: str, filename: str = None
                          ["BatchID", "EffectiveDate", "Station", "TariffCategory", "OutboundRatePerKg",
                           "OutboundMinCharge", "InboundRatePerKg", "InboundMinCharge", "Remarks"],
                          data["tsp"])
+        elif carrier in GENERIC_CARRIERS:
+            data = _GENERIC_READERS[carrier](filepath)
+            total = len(data["rates"]) + len(data["surcharges"])
+            batch_id = _insert_batch(conn, carrier, fname, eff, total, "OK")
+            _insert_rates(conn, CARRIER_PREFIX[carrier], GENERIC_CARRIERS[carrier], parsers.GENERIC_RATE_COLUMNS,
+                          data["rates"], batch_id, eff, result)
+            for rec in data["surcharges"]:
+                rec["BatchID"] = batch_id
+            _bulk_insert(conn, "BatchSurcharges", _SURCHARGE_COLUMNS, data["surcharges"])
         else:
             raise ValueError(f"Unhandled carrier '{carrier}'")
+        # The schedule's airline code for this carrier now has a tariff
+        for code, c in AIRLINE_CARRIER.items():
+            if c == carrier:
+                conn.execute("INSERT OR IGNORE INTO Airlines (Code, Name) VALUES (?, ?)", (code, carrier))
+                conn.execute("UPDATE Airlines SET TariffCarrier = ? WHERE Code = ? AND TariffCarrier IS NULL",
+                             (carrier, code))
         conn.commit()
         result.update(status="ok", rows=total, batch_id=batch_id,
                       message=f"Loaded {total} rows.")

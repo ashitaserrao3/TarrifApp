@@ -25,11 +25,17 @@ from dataclasses import dataclass, field
 
 # Which products are general cargo (what the dashboard prices). Special
 # cargo (SCR, HEA, DGR, XPS...) is browsable on the Tariffs page.
-GENERAL_PRODUCTS = {"IndiGo": ["GCR", "LEAN"], "Air India": ["GCR", "PRIME"]}
-CONDITION_COL = {"IndiGo": "ApplicableFlights", "Air India": "ApplicableFlightNumber"}
-TABLE_PREFIX = {"IndiGo": "IndiGo", "Air India": "AirIndia"}
+GENERAL_PRODUCTS = {"IndiGo": ["GCR", "LEAN"], "Air India": ["GCR", "PRIME"], "Akasa": ["GCR", "PRIME"],
+                    "SpiceJet": ["GCR", "PRIME", "LEAN"], "Star Air": ["GCR"]}
+CONDITION_COL = {"IndiGo": "ApplicableFlights", "Air India": "ApplicableFlightNumber", "Akasa": "ApplicableFlights",
+                 "SpiceJet": "ApplicableFlights", "Star Air": "ApplicableFlights"}
+TABLE_PREFIX = {"IndiGo": "IndiGo", "Air India": "AirIndia", "Akasa": "Akasa", "SpiceJet": "SpiceJet",
+                "Star Air": "StarAir"}
+# When rows of different products match a flight equally (e.g. SpiceJet's "PRIME - All Flights" next to
+# the route's GCR rate), the more specific product wins.
+PRODUCT_PRIORITY = {"PRIME": 0, "LEAN": 1, "GCR": 2}
 
-BREAKS = [(0, "RateN"), (45, "RateQ45"), (100, "RateQ100"), (300, "RateQ300"),
+BREAKS = [(0, "RateN"), (45, "RateQ45"), (100, "RateQ100"), (250, "RateQ250"), (300, "RateQ300"),
           (500, "RateQ500"), (1000, "RateQ1000")]
 
 STATUS_OK = "OK"
@@ -334,6 +340,7 @@ class TariffEngine:
         self._loaded = set()  # (carrier, origin) already pulled from DB
         self._network = [dict(r) for r in conn.execute(
             "SELECT * FROM NetworkSurcharges WHERE Active = 1 ORDER BY SurchargeID")]
+        self._batch_surcharges = {}
         self._tariff_code = {r["Code"]: r["TariffCode"] for r in conn.execute(
             "SELECT Code, TariffCode FROM Stations WHERE TariffCode IS NOT NULL AND TariffCode <> ''")}
 
@@ -411,6 +418,8 @@ class TariffEngine:
                               f"can't pick the time-based rate")
         elif matched:
             top = [r for r in matched if r["_Condition"].rank == best_rank]
+            best_product = min(PRODUCT_PRIORITY.get(r["_Product"], 9) for r in top)
+            top = [r for r in top if PRODUCT_PRIORITY.get(r["_Product"], 9) == best_product]
             chosen = top[0]
             res.status = STATUS_OK
             res.match_note = chosen["_Condition"].note
@@ -458,7 +467,7 @@ class TariffEngine:
                 return
             out.append(Surcharge(label, amt, reason or full, flag))
 
-        if carrier == "IndiGo":
+        if carrier != "Air India":
             add("Sector", row.get("SectorSurcharge"), None)
             add("Flight", row.get("FlightSurcharge"), None)
         else:
@@ -466,6 +475,7 @@ class TariffEngine:
             add("Seasonal", row.get("SeasonalSurcharge"), None)
 
         o, d = flight["Origin"], flight["Destination"]
+        out += self._file_surcharges(carrier, self.tariff_code(o), self.tariff_code(d), fno)
         for s in self._network:
             if s["Carrier"] != carrier:
                 continue
@@ -479,6 +489,35 @@ class TariffEngine:
                     or (applies == "route" and st == f"{o}-{d}")):
                 out.append(Surcharge(s["Label"] or s["AppliesTo"], s["RatePerKg"], s["Reason"] or ""))
         return out
+
+    def _file_surcharges(self, carrier, o, d, fno):
+        """Surcharges stated in the carrier's tariff file in force (BatchSurcharges). A surcharge
+        for this exact route replaces a network-wide one into the same destination."""
+        b = self.batch(carrier)
+        if not b:
+            return []
+        if carrier not in self._batch_surcharges:
+            self._batch_surcharges[carrier] = [dict(r) for r in self.conn.execute(
+                "SELECT * FROM BatchSurcharges WHERE BatchID = ? ORDER BY SurchargeID", (b["BatchID"],))]
+
+        def listed(v):
+            return {x.strip().upper() for x in (v or "").split(",") if x.strip()}
+
+        hits = []
+        for s in self._batch_surcharges[carrier]:
+            vf, vt = to_date(s["ValidFrom"]), to_date(s["ValidTo"])
+            if (vf and vf > self.as_of) or (vt and vt < self.as_of):
+                continue
+            origins, dests = listed(s["Origins"]), listed(s["Destinations"])
+            if (origins and o not in origins) or (dests and d not in dests) or o in listed(s["ExceptOrigins"]):
+                continue
+            flights = {norm_flight(f) for f in listed(s["Flights"])}
+            if (flights and fno not in flights) or fno in {norm_flight(f) for f in listed(s["ExceptFlights"])}:
+                continue
+            hits.append(s)
+        specific_dests = {d for s in hits if s["Origins"] and s["Destinations"]}
+        hits = [s for s in hits if s["Origins"] or not s["Destinations"] or d not in specific_dests]
+        return [Surcharge(s["Label"] or "Surcharge", s["RatePerKg"], s["Reason"] or "") for s in hits]
 
     def price_all(self, flights):
         return [self.price(f) for f in flights]
