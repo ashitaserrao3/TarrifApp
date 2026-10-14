@@ -8,14 +8,11 @@ every flight with its CPKG, computed live from the loaded schedule and rate
 files.
 
 Data comes from the data/ folder (synced automatically - see data/README.md).
-Everyone can view and interact; only the admin can upload, after signing in
-with the password set as `admin_password` in .streamlit/secrets.toml (or the
-TARIFFAPP_ADMIN_PASSWORD environment variable). With no password set,
-uploading in the app is switched off.
+Anyone using the app can also upload new rate files or the schedule workbook
+from the sidebar.
 """
 
 import datetime as dt
-import hmac
 import html
 import os
 import re
@@ -103,7 +100,7 @@ def num(v):
 
 
 def save_to_data_folder(f, sub):
-    """Store an admin upload in the data folder under its own name, so it is synced like any other file."""
+    """Store an upload in the data folder under its own name, so it is synced like any other file."""
     folder = os.path.join(sync.data_dir(), sub)
     os.makedirs(folder, exist_ok=True)
     name = re.sub(r'[\\/:*?"<>|]+', "_", os.path.basename(f.name)).strip() or "upload.xlsx"
@@ -111,13 +108,6 @@ def save_to_data_folder(f, sub):
         out.write(f.getbuffer())
     return name
 
-
-def admin_password():
-    try:
-        pw = st.secrets.get("admin_password")
-    except Exception:  # noqa: BLE001 - no secrets file at all
-        pw = None
-    return pw or os.environ.get("TARIFFAPP_ADMIN_PASSWORD")
 
 
 @st.cache_resource(show_spinner="Loading the latest data…")
@@ -135,12 +125,11 @@ conn = get_conn()
 today = dt.date.today()
 
 # ---------------------------------------------------------------------------
-# Data: synced from the data folder; uploads only for the signed-in admin
+# Data: synced from the data folder; anyone can upload from the sidebar
 # ---------------------------------------------------------------------------
 
 sync_result = sync_data(sync.folder_signature())
 ss = st.session_state
-password = admin_password()
 
 with st.sidebar:
     st.caption("**Rates in use**")
@@ -150,57 +139,44 @@ with st.sidebar:
     st.caption(f"Schedule: {n_flights:,} flights")
     st.divider()
 
-    if ss.get("is_admin"):
-        st.subheader("Update data")
-        with st.form("rates", clear_on_submit=True, border=False):
-            files = st.file_uploader("New Air India / IndiGo rate files", type=["xlsx"], accept_multiple_files=True,
-                                     help="Saved into data/rates and loaded. Files already loaded are skipped.")
-            if st.form_submit_button("Load rate files", width="stretch", key="load_rates") and files:
-                for f in files:
-                    save_to_data_folder(f, "rates")
-                st.cache_resource.clear()
-                st.rerun()
-        with st.form("schedule", clear_on_submit=True, border=False):
-            sched = st.file_uploader("Flight schedule workbook", type=["xlsx", "xlsm"],
-                                     help="Saved into data/schedule and imported (Raw Data, Lists, Add-on Rates, "
-                                          "Network Surcharges).")
-            if st.form_submit_button("Load schedule", width="stretch", key="load_schedule") and sched:
-                save_to_data_folder(sched, "schedule")
-                st.cache_resource.clear()
-                st.rerun()
-        if st.button("Reload data folder", width="stretch", key="reload"):
+    st.subheader("Update data")
+    with st.form("rates", clear_on_submit=True, border=False):
+        files = st.file_uploader("New Air India / IndiGo rate files", type=["xlsx"], accept_multiple_files=True,
+                                 help="Saved into data/rates and loaded. Files already loaded are skipped.")
+        if st.form_submit_button("Load rate files", width="stretch", key="load_rates") and files:
+            for f in files:
+                save_to_data_folder(f, "rates")
+            ss["_just_uploaded"] = True
             st.cache_resource.clear()
             st.rerun()
-        if sync_result["schedule"] or sync_result["rates_loaded"] or sync_result["history"]:
-            loaded = [f"schedule {sync_result['schedule']}"] if sync_result["schedule"] else []
-            loaded += [f"history {h}" for h in sync_result["history"]] + sync_result["rates_loaded"]
-            st.success("Loaded: " + "; ".join(loaded))
-        for e in sync_result["errors"]:
-            st.error(e)
-        st.caption("On Streamlit Cloud, files uploaded here last until the app restarts. To keep them, also add "
-                   "them to the data folder in GitHub.")
-        if st.button("Sign out", key="sign_out"):
-            ss["is_admin"] = False
+    with st.form("schedule", clear_on_submit=True, border=False):
+        sched = st.file_uploader("Flight schedule workbook", type=["xlsx", "xlsm"],
+                                 help="Saved into data/schedule and imported (Raw Data, Lists, Add-on Rates, "
+                                      "Network Surcharges).")
+        if st.form_submit_button("Load schedule", width="stretch", key="load_schedule") and sched:
+            save_to_data_folder(sched, "schedule")
+            ss["_just_uploaded"] = True
+            st.cache_resource.clear()
             st.rerun()
-    else:
-        with st.expander("🔒 Admin"):
-            if not password:
-                st.caption("Uploading is switched off here. The data is updated from the data folder.")
-            else:
-                with st.form("login", border=False):
-                    pw = st.text_input("Password", type="password", key="admin_pw")
-                    if st.form_submit_button("Sign in", key="sign_in"):
-                        if hmac.compare_digest(pw.encode(), str(password).encode()):
-                            ss["is_admin"] = True
-                            st.rerun()
-                        else:
-                            st.error("Wrong password.")
+    if st.button("Reload data folder", width="stretch", key="reload"):
+        st.cache_resource.clear()
+        st.rerun()
+    # Say what was loaded only to the person who just uploaded, not to every visitor.
+    if ss.pop("_just_uploaded", False) and (sync_result["schedule"] or sync_result["rates_loaded"]
+                                            or sync_result["history"]):
+        loaded = [f"schedule {sync_result['schedule']}"] if sync_result["schedule"] else []
+        loaded += [f"history {h}" for h in sync_result["history"]] + sync_result["rates_loaded"]
+        st.success("Loaded: " + "; ".join(loaded))
+    for e in sync_result["errors"]:
+        st.error(e)
+    st.caption("On Streamlit Cloud, files uploaded here last until the app restarts. To keep them, also add "
+               "them to the data folder in GitHub.")
 
 hubs, stations = queries.stations(conn)
 if not stations:
     st.html(SHEET_CSS + '<div class="xl xl-title">✈&nbsp; FLIGHT &nbsp;SCHEDULE</div>')
     st.info("No data yet. Add the flight schedule workbook to data/schedule and your Air India / IndiGo rate "
-            "files to data/rates (see data/README.md), or sign in as admin in the sidebar and upload them.")
+            "files to data/rates (see data/README.md), or upload them from the sidebar.")
     st.stop()
 
 eng = TariffEngine(conn, today)

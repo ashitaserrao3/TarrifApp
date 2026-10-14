@@ -76,27 +76,11 @@ def test_shared_link_opens_route(loaded):
     assert {r[1] for r in dashboard_rows(at)} == {"AI1715", "AI2458"}
 
 
-def test_visitors_cannot_upload(loaded):
+def test_everyone_can_upload(loaded):
     at = run()
     assert not at.exception
-    assert len(at.get("file_uploader")) == 0
-    assert any("Uploading is switched off" in c.value for c in at.caption)
-
-
-def test_admin_signs_in_to_upload(loaded, monkeypatch):
-    monkeypatch.setenv("TARIFFAPP_ADMIN_PASSWORD", "s3cret")
-    at = run()
-    assert len(at.get("file_uploader")) == 0  # signed out: no upload controls
-    at.text_input(key="admin_pw").input("wrong")
-    at.button(key="sign_in").click().run()
-    assert any("Wrong password" in e.value for e in at.error)
-    assert len(at.get("file_uploader")) == 0
-    at.text_input(key="admin_pw").input("s3cret")
-    at.button(key="sign_in").click().run()
-    assert at.session_state["is_admin"] is True
-    assert len(at.get("file_uploader")) == 2
-    at.button(key="sign_out").click().run()
-    assert len(at.get("file_uploader")) == 0
+    assert len(at.get("file_uploader")) == 2  # rate files + schedule workbook, no sign-in needed
+    assert len(at.get("text_input")) == 0     # no password box
 
 
 def test_app_builds_itself_from_the_data_folder(db_path, tmp_path):

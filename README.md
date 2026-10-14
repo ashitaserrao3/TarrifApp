@@ -27,10 +27,10 @@ The page address always holds the current route, e.g.
 `http://localhost:8501/?from=DEL&to=CJB`. Bookmark it, or send it to
 a colleague to open the same view.
 
-## Who can change the data
+## Updating the data
 
-Everyone who opens the app can **view and interact**: pick routes, switch
-sheets, sort and search. **Only you update the data**, in one of two ways.
+Anyone who opens the app can view it, pick routes, and upload new files from
+the sidebar. There are two ways to update the data:
 
 ### 1. From the backend: the `data/` folder (recommended)
 
@@ -50,24 +50,15 @@ is only re-imported when its contents change. To update:
 * **On your PC:** copy the file into the folder. Then commit and push it, or
   run `python manage.py sync`.
 
-Only people who can change your GitHub repository can change the data. Because
-the files live in the repository, the data survives app restarts and
-redeploys on Streamlit Community Cloud.
+Because the files live in the repository, the data survives app restarts
+and redeploys on Streamlit Community Cloud.
 
-### 2. Admin sign-in inside the app
+### 2. Upload in the app
 
-Set a password, and you'll see a **🔒 Admin** box in the sidebar. Signing in
-shows the upload buttons. Visitors never see them.
-
-* **On your PC:** copy `.streamlit/secrets.toml.example` to
-  `.streamlit/secrets.toml` and set `admin_password`. Git ignores this file,
-  so the password is never pushed.
-* **On Streamlit Cloud:** open the app's *Settings → Secrets* and add
-  `admin_password = "your password"`.
-
-With no password set, uploading inside the app is switched off completely.
-Files uploaded this way are saved into `data/`. On Streamlit Cloud they last
-only until the app restarts, so for anything permanent use option 1.
+The **Update data** panel in the sidebar takes new rate files and the
+schedule workbook. It's open to everyone who can open the app, no password.
+Uploaded files are saved into `data/`. On Streamlit Cloud they last only until
+the app restarts, so for anything permanent use option 1 as well.
 
 ### Your history is already in
 
