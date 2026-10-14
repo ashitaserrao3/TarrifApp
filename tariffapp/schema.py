@@ -266,45 +266,5 @@ CREATE TABLE IF NOT EXISTS NetworkSurcharges (
     Active       INTEGER NOT NULL DEFAULT 1,
     Label        TEXT
 );
-
--- Customer rate quotations (data/quotes): the quote workbook's per-route
--- rates and airline charges, plus any special-rates PDF sent with it.
-CREATE TABLE IF NOT EXISTS Quotes (
-    QuoteID        INTEGER PRIMARY KEY AUTOINCREMENT,
-    SourceFileName TEXT,
-    Customer       TEXT,
-    EffectiveDate  TEXT
-);
-CREATE TABLE IF NOT EXISTS QuoteRates (
-    QuoteID     INTEGER NOT NULL REFERENCES Quotes(QuoteID) ON DELETE CASCADE,
-    Kind        TEXT NOT NULL,      -- 'quote' (workbook) | 'special' (special-rates PDF)
-    Origin      TEXT NOT NULL,
-    Destination TEXT NOT NULL,
-    Airline     TEXT NOT NULL,      -- app airline code: INDIGO, AIRINDIA, AKASA, SPICEJET, STARAIR
-    Flight      TEXT,               -- normalised flight number, or ALL / GCR / PRIME
-    Commodity   TEXT,
-    RateN REAL, RateQ45 REAL, RateQ100 REAL, RateQ250 REAL, RateQ300 REAL, RateQ500 REAL, RateQ1000 REAL,
-    DiscPerKg   REAL,
-    DiscPct     REAL,
-    Base100     REAL,               -- base (or SSP) rate, 100+ kg
-    Terminal    REAL,               -- terminal charges & surcharges
-    Master100   REAL,
-    Console     REAL,
-    Note        TEXT
-);
-CREATE INDEX IF NOT EXISTS ix_QuoteRates_od ON QuoteRates(Origin, Destination, Airline);
-CREATE TABLE IF NOT EXISTS QuoteCharges (
-    QuoteID     INTEGER NOT NULL REFERENCES Quotes(QuoteID) ON DELETE CASCADE,
-    Airline     TEXT NOT NULL,
-    AirlineName TEXT,
-    MinFreight TEXT, AwbCharge TEXT, DoCharge TEXT, DcCharge TEXT, DryIceCharge TEXT, ValCharge TEXT,
-    DiscPct TEXT, DiscPerKg TEXT, AwbDiscount TEXT
-);
-CREATE TABLE IF NOT EXISTS QuoteNotes (
-    QuoteID  INTEGER NOT NULL REFERENCES Quotes(QuoteID) ON DELETE CASCADE,
-    Kind     TEXT NOT NULL,         -- 'quote' | 'special'
-    Seq      INTEGER,
-    Text     TEXT
-);
 """)
     return "\n".join(parts)

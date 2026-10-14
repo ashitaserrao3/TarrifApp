@@ -79,7 +79,7 @@ def test_shared_link_opens_route(loaded):
 def test_everyone_can_upload(loaded):
     at = run()
     assert not at.exception
-    assert len(at.get("file_uploader")) == 3  # rate files, schedule, rate quote - no sign-in needed
+    assert len(at.get("file_uploader")) == 2  # rate files + schedule workbook, no sign-in needed
     assert len(at.get("text_input")) == 0     # no password box
 
 
@@ -95,36 +95,3 @@ def test_app_builds_itself_from_the_data_folder(db_path, tmp_path):
     assert not at.exception, at.exception
     rows = dashboard_rows(at)
     assert rows == [("INDIGO", "6E1", "GCR", "10:00", "72", "62")]  # 50/40 + fuel 4 + add-on 18
-
-
-def test_dashboard_shows_the_customer_quote(db_path, tmp_path):
-    import openpyxl
-    from conftest import make_indigo_file, make_schedule_file
-    data = tmp_path / "data"
-    for sub in ("schedule", "rates", "quotes"):
-        (data / sub).mkdir(parents=True)
-    make_schedule_file(data / "schedule" / "schedule.xlsx", [("AMD", "DEL", "INDIGO", "6E1", "10:00", "MTWTFSS"),
-                                                              ("AMD", "DEL", "INDIGO", "6E2", "12:00", "MTWTFSS")])
-    make_indigo_file(data / "rates" / "8.1 6E Eff. 16th Aug 2026.xlsx",
-                     [("AMD", "DEL", "GCR", 1800, 70, 50, 40, None, None, None)])
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    for r in [["Issuer Index Pvt Ltd"], ["ACME LOGISTICS"], ["Rate Quotation"], ["W.E.F. 01-08-2026"],
-              ["Airline", "Minimum Freight", "Awb Chg"], ["Indigo", 1800, "Min. 500 / 2.00 Per kg"], [],
-              ["ORG", "DEST", "Airline", "Flight", "Commodity", "N Rate", "Q45", "Q100", "Q250", "Q300", "Q500",
-               "Q1000", "Disc/Kg.", "Disc%", "Base+100 Rate", "Terminal&Surcharges", "Master+100", "Console Rate"],
-              ["AMD", "DEL", "Indigo", "ALL", "GENERAL", 70, 50, 40, None, None, None, None, None, "7%",
-               37.2, 20, 57.2, 59],
-              ["AMD", "DEL", "Indigo", "6E 0002", "GENERAL", 70, 50, 45, None, None, None, None, None, "7%",
-               41.85, 20, 61.85, 63],
-              [], ["NOTE: 1. GST @ 18% will be applicable."], ["2. Cheques favoring M/s.Index Logistics only."]]:
-        ws.append(r)
-    wb.save(data / "quotes" / "ACME.xlsx")
-    at = run("AMD", "DEL")
-    assert not at.exception, at.exception
-    rows = dashboard_rows(at)
-    assert rows == [("INDIGO", "6E1", "GCR", "10:00", "72", "62", "7%", "37.20", "20", "57.20", "59"),
-                    ("INDIGO", "6E2", "GCR", "12:00", "72", "62", "7%", "41.85", "20", "61.85", "63")]
-    body = sheet_html(at)
-    assert "ACME LOGISTICS" in body and "Min. 500 / 2.00 Per kg" in body and "GST @ 18%" in body
-    assert "Index" not in body

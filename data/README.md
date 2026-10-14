@@ -10,7 +10,6 @@ this repository can change the data, and the data survives app restarts.
 | `schedule/dgca/` | The DGCA approved-schedule PDFs, one per airline (e.g. `INTERGLOBE AVIATION LTD_2026.pdf`). When present, **the flights come from these** and not from the workbook's Raw Data. Each new season (summer from late March, winter from late October), replace them with the new season's files. The app reads them once and saves the result as `schedule.csv` here. |
 | `history/` | Your rate history from the old CargoRates database: 32 rate files, Mar–Aug 2026 (Air India up to 20-Aug-26, IndiGo up to 16-Aug-26). Loaded once. New rate files go in `rates/`, not here. |
 | `rates/` | Every airline tariff `.xlsx` you receive: IndiGo, Air India, Akasa, SpiceJet, Star Air. Keep the airline's file name; the effective date is read from it (e.g. `8.1 6E Eff. 16th Aug 2026.xlsx`). Keep the old files too, because they're the rate history. |
-| `quotes/` | The customer rate quote workbook (`.xlsx`) and any special-rates PDF sent with it. Shown as the QUOTE columns on the Dashboard. Replace the files when a new quote comes in. |
 
 **To update from GitHub's website:** open this folder, click *Add file → Upload
 files*, drop in the new file, and click *Commit changes*. Streamlit Cloud
