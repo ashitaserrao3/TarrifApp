@@ -21,6 +21,18 @@ def stations(conn):
     return hubs, rows
 
 
+def destinations(conn, origins):
+    """Airports with nonstop flights from any of `origins` in the schedule in use, plus the origins
+    themselves (in station order)."""
+    src = "dgca" if conn.execute("SELECT 1 FROM Flights WHERE Source = 'dgca' LIMIT 1").fetchone() else "workbook"
+    marks = ",".join("?" * len(origins))
+    served = {r[0] for r in conn.execute(
+        f"SELECT DISTINCT Destination FROM Flights WHERE COALESCE(Source, 'workbook') = ? AND Origin IN ({marks})",
+        (src, *origins))} | set(origins)
+    return [r["Code"] for r in conn.execute("SELECT Code FROM Stations ORDER BY COALESCE(SortOrder, 999), Code")
+            if r["Code"] in served]
+
+
 def latest_batches(conn):
     out = {}
     for carrier in CARRIER_TABLES:

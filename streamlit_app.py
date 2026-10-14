@@ -189,7 +189,7 @@ if not stations:
 eng = TariffEngine(conn, today)
 names = {s["Code"]: s["Name"] or "" for s in stations}
 hub_codes = [s["Code"] for s in hubs] or list(names)
-all_codes = list(names)
+all_codes = queries.destinations(conn, hub_codes) or list(names)
 
 if not ss.get("_from_link"):  # a shared link like ?from=DEL&to=BOM opens that route once per session
     ss["_from_link"] = True

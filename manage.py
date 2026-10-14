@@ -35,6 +35,8 @@ def main():
     if args.cmd == "sync":
         r = sync.sync_data_folder(conn)
         print(f"Schedule: {r['schedule'] or 'unchanged'}")
+        if r.get("dgca"):
+            print(f"Flights: {r['dgca']}")
         for h in r["history"]:
             print(f"History: {h}")
         print(f"Rate files loaded: {len(r['rates_loaded'])}, already loaded: {r['rates_skipped']}")
