@@ -13,7 +13,7 @@ import allcargo
 import supabase_store
 import tariff_changes
 from tariffapp import database_path, db, queries, sync
-from tariffapp.linker import STATUS_CHECK, STATUS_NO_RATE, STATUS_NO_TARIFF, TariffEngine
+from tariffapp.linker import STATUS_NO_RATE, STATUS_NO_TARIFF, TariffEngine
 
 st.set_page_config(page_title="Flight Schedule", page_icon="✈️", layout="wide")
 
@@ -112,10 +112,9 @@ if not st.session_state.get("authentication_status"):
 
 # Colours: the workbook's navy / green, softened for the web
 NAVY, NAVY_DARK, BLUE, GREEN_DARK = "#1F4E78", "#16324F", "#2E74B5", "#2F5130"
-INK, MUTED, LINE, STRIPE = "#0F1B33", "#64748B", "#E5E9F0", "#F8FAFC"
+INK, MUTED, LINE, STRIPE, HOVER = "#0F1B33", "#64748B", "#E5E9F0", "#F8FAFC", "#EEF4FB"
 STATUS_FILL = {"ACTIVE": ("#DCFCE7", "#166534"), "NO SERVICE": ("#FEE2E2", "#991B1B"),
                "SAME CITY": ("#FEF3C7", "#92400E")}
-CHECK_AMBER = "#FFE699"
 LOWEST_RED = "#FFC7CE"  # Excel's "light red fill"
 AIRLINE_DOT = {"INDIGO": "#1D4ED8", "AIRINDIA": "#B91C1C", "AKASA": "#F97316", "SPICEJET": "#EAB308",
                "STARAIR": "#0EA5E9", "ALLIANCEAIR": "#64748B"}
@@ -151,6 +150,7 @@ SHEET_CSS = f"""
 .xl-table td {{ padding: 10px 12px; border-bottom: 1px solid {LINE}; white-space: nowrap; }}
 .xl-table tbody tr:last-child td {{ border-bottom: none; }}
 .xl-table tbody tr:nth-child(even) td {{ background: {STRIPE}; }}
+.xl-table tbody tr:hover td {{ background: {HOVER}; }}
 .xl-table td.c {{ text-align: center; }}
 .xl-table td.air {{ font-weight: 600; }}
 .xl-table .dot {{ display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; }}
@@ -158,7 +158,6 @@ SHEET_CSS = f"""
 .xl-table td.cpkg {{ text-align: center; color: {GREEN_DARK}; font-weight: 700; font-size: 15px;
                      font-variant-numeric: tabular-nums; }}
 .xl-table td.cpkg.lowest {{ background: {LOWEST_RED} !important; color: #9B1C31; }}
-.xl-table td.check {{ background: {CHECK_AMBER} !important; }}
 .xl-table td.muted {{ color: #94A3B8; }}
 .xl-table sup {{ color: #9C5700; font-size: 10px; font-weight: 400; }}
 .xl-legend {{ display: flex; flex-wrap: wrap; gap: 14px; align-items: center; color: {MUTED}; font-size: 12px;
@@ -573,19 +572,20 @@ for r, cells, sp in priced:
     elif r.status == STATUS_NO_RATE:
         product, pcls = "No rate", "c muted"
     else:
-        product, pcls = r.product or "", "c check" if r.status == STATUS_CHECK else "c"
-    badge = ' <span class="sp">SPECIAL</span>' if sp else ""
+        product, pcls = r.product or "", "c"
+    badge = ' <span class="sp" title="Akasa special rate">SPECIAL</span>' if sp else ""
     tds = []
     for brk in (45, 100):
         cell = cells[brk]
         if cell is None:
             tds.append('<td class="cpkg"></td>')
         elif cell["v"] is None:
-            tds.append('<td class="cpkg muted">–</td>')
+            tds.append(f'<td class="cpkg muted" title="{esc(cell["tip"])}">–</td>')
         else:
             mark = f"<sup>{cell['used']}</sup>" if cell["used"] != f"{brk}+" else ""
             low = ' lowest' if cell["v"] == lowest[brk] else ""
-            tds.append(f'<td class="cpkg{low}">{num(cell["v"])}{mark}</td>')
+            tip = cell["tip"] + (f"; lowest {brk}+ kg CPKG on this route" if low else "")
+            tds.append(f'<td class="cpkg{low}" title="{esc(tip)}">{num(cell["v"])}{mark}</td>')
     rows_html.append(
         f"<tr><td class='air'><span class='dot' style='background:{AIRLINE_DOT.get(f['Airline'], MUTED)}'></span>"
         f"{esc(f['Airline'])}</td><td class='c fno'>{esc(f['FlightNo'])}</td>"
@@ -628,6 +628,6 @@ st.html(SHEET_CSS + f"""
   <div class="xl-legend">
     <span><i style="background:{LOWEST_RED}"></i>Lowest CPKG in its column (45+ / 100+ kg)</span>
     <span><span class="sp" style="margin:0 6px 0 0">SPECIAL</span>Akasa special rate</span>
-    <span><i style="background:{CHECK_AMBER}"></i>Check the rate condition</span>
+    <span>Hover a price for its breakdown</span>
   </div>
 </div>""")
