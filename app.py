@@ -580,12 +580,11 @@ for r, cells, sp in priced:
         if cell is None:
             tds.append('<td class="cpkg"></td>')
         elif cell["v"] is None:
-            tds.append(f'<td class="cpkg muted" title="{esc(cell["tip"])}">–</td>')
+            tds.append('<td class="cpkg muted">–</td>')
         else:
             mark = f"<sup>{cell['used']}</sup>" if cell["used"] != f"{brk}+" else ""
             low = ' lowest' if cell["v"] == lowest[brk] else ""
-            tip = cell["tip"] + (f"; lowest {brk}+ kg CPKG on this route" if low else "")
-            tds.append(f'<td class="cpkg{low}" title="{esc(tip)}">{num(cell["v"])}{mark}</td>')
+            tds.append(f'<td class="cpkg{low}">{num(cell["v"])}{mark}</td>')
     rows_html.append(
         f"<tr><td class='air'><span class='dot' style='background:{AIRLINE_DOT.get(f['Airline'], MUTED)}'></span>"
         f"{esc(f['Airline'])}</td><td class='c fno'>{esc(f['FlightNo'])}</td>"
@@ -628,6 +627,5 @@ st.html(SHEET_CSS + f"""
   <div class="xl-legend">
     <span><i style="background:{LOWEST_RED}"></i>Lowest CPKG in its column (45+ / 100+ kg)</span>
     <span><span class="sp" style="margin:0 6px 0 0">SPECIAL</span>Akasa special rate</span>
-    <span>Hover a price for its breakdown</span>
   </div>
 </div>""")
