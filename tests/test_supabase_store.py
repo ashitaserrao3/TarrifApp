@@ -24,3 +24,8 @@ def test_nothing_published_then_round_trips_and_overwrites(supabase):
 def test_wrong_key_is_reported(supabase):
     with pytest.raises(RuntimeError, match="Invalid key"):
         supabase_store.SupabaseStore(supabase.url, "wrong").download()
+
+
+def test_missing_bucket_is_reported_not_taken_as_empty(supabase):
+    with pytest.raises(RuntimeError, match="Bucket not found"):
+        supabase_store.SupabaseStore(supabase.url, KEY, bucket="tarifs").download()

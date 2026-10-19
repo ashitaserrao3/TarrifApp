@@ -25,6 +25,9 @@ class FakeSupabase:
             def do_GET(self):
                 if not self._ok():
                     return self._send(400, {"statusCode": "403", "error": "Unauthorized", "message": "Invalid key"})
+                if "/tariffs/" not in self.path:
+                    return self._send(400, {"statusCode": "404", "error": "Bucket not found",
+                                            "message": "Bucket not found"})
                 if self.path not in fake.objects:
                     return self._send(400, {"statusCode": "404", "error": "not_found", "message": "Object not found"})
                 self._send(200, fake.objects[self.path], "application/zip")

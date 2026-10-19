@@ -407,6 +407,8 @@ if ss.get("username") == ADMIN_USER:
                        "(see secrets.toml.example).")
         elif restore_error:
             st.error(restore_error)
+        else:
+            st.caption("✓ Connected to Supabase: published tariffs are saved there.")
     if up:
         review = read_upload(up)
         with st.container(border=True):

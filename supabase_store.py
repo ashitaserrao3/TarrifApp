@@ -26,8 +26,8 @@ class SupabaseStore:
     def download(self):
         """The stored files {relative path: bytes}, or {} when nothing has been published yet."""
         r = requests.get(self.url, headers=self.headers, timeout=120)
-        if r.status_code in (400, 404) and "not" in r.text.lower() and "found" in r.text.lower():
-            return {}  # nothing published yet
+        if r.status_code in (400, 404) and "object not found" in r.text.lower():
+            return {}  # nothing published yet (a missing bucket is reported below)
         if r.status_code >= 400:
             raise RuntimeError(f"Supabase download: {r.status_code} {r.text[:200]}")
         with zipfile.ZipFile(io.BytesIO(r.content)) as z:
