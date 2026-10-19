@@ -112,7 +112,7 @@ if not st.session_state.get("authentication_status"):
 
 # Colours: the workbook's navy / green, softened for the web
 NAVY, NAVY_DARK, BLUE, GREEN_DARK = "#1F4E78", "#16324F", "#2E74B5", "#2F5130"
-INK, MUTED, LINE, STRIPE, HOVER = "#0F1B33", "#64748B", "#E5E9F0", "#F8FAFC", "#EEF4FB"
+INK, MUTED, LINE, STRIPE = "#0F1B33", "#64748B", "#E5E9F0", "#F8FAFC"
 STATUS_FILL = {"ACTIVE": ("#DCFCE7", "#166534"), "NO SERVICE": ("#FEE2E2", "#991B1B"),
                "SAME CITY": ("#FEF3C7", "#92400E")}
 CHECK_AMBER = "#FFE699"
@@ -151,7 +151,6 @@ SHEET_CSS = f"""
 .xl-table td {{ padding: 10px 12px; border-bottom: 1px solid {LINE}; white-space: nowrap; }}
 .xl-table tbody tr:last-child td {{ border-bottom: none; }}
 .xl-table tbody tr:nth-child(even) td {{ background: {STRIPE}; }}
-.xl-table tbody tr:hover td {{ background: {HOVER}; }}
 .xl-table td.c {{ text-align: center; }}
 .xl-table td.air {{ font-weight: 600; }}
 .xl-table .dot {{ display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; }}
@@ -575,23 +574,22 @@ for r, cells, sp in priced:
         product, pcls = "No rate", "c muted"
     else:
         product, pcls = r.product or "", "c check" if r.status == STATUS_CHECK else "c"
-    badge = ' <span class="sp" title="Akasa special rate">SPECIAL</span>' if sp else ""
+    badge = ' <span class="sp">SPECIAL</span>' if sp else ""
     tds = []
     for brk in (45, 100):
         cell = cells[brk]
         if cell is None:
             tds.append('<td class="cpkg"></td>')
         elif cell["v"] is None:
-            tds.append(f'<td class="cpkg muted" title="{esc(cell["tip"])}">–</td>')
+            tds.append('<td class="cpkg muted">–</td>')
         else:
             mark = f"<sup>{cell['used']}</sup>" if cell["used"] != f"{brk}+" else ""
             low = ' lowest' if cell["v"] == lowest[brk] else ""
-            tip = cell["tip"] + (f"; lowest {brk}+ kg CPKG on this route" if low else "")
-            tds.append(f'<td class="cpkg{low}" title="{esc(tip)}">{num(cell["v"])}{mark}</td>')
+            tds.append(f'<td class="cpkg{low}">{num(cell["v"])}{mark}</td>')
     rows_html.append(
         f"<tr><td class='air'><span class='dot' style='background:{AIRLINE_DOT.get(f['Airline'], MUTED)}'></span>"
         f"{esc(f['Airline'])}</td><td class='c fno'>{esc(f['FlightNo'])}</td>"
-        f"<td class='{pcls}' title='{esc(r.match_note)}'>{esc(product)}{badge}</td>"
+        f"<td class='{pcls}'>{esc(product)}{badge}</td>"
         f"<td class='c'>{esc(f['DepTime'])}</td>{''.join(tds)}</tr>")
 
 route_specials = sorted((k[3], v) for k, v in (special or {"rows": {}})["rows"].items()
@@ -630,7 +628,6 @@ st.html(SHEET_CSS + f"""
   <div class="xl-legend">
     <span><i style="background:{LOWEST_RED}"></i>Lowest CPKG in its column (45+ / 100+ kg)</span>
     <span><span class="sp" style="margin:0 6px 0 0">SPECIAL</span>Akasa special rate</span>
-    <span><i style="background:{CHECK_AMBER}"></i>Check the rate condition (hover it)</span>
-    <span>Hover a price for its breakdown</span>
+    <span><i style="background:{CHECK_AMBER}"></i>Check the rate condition</span>
   </div>
 </div>""")

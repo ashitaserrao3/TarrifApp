@@ -8,7 +8,7 @@ flights, flight count, status, and every flight with its product, ETD and
 
 **CPKG = the airline's own tariff rate (45+ / 100+) + Terminal & Surcharges** from the
 Allcargo rate quotation, for that flight: its own flight-number row, else its product's
-row, else the route's `ALL` row. Hover a CPKG value to see its breakdown.
+row, else the route's `ALL` row.
 
 **Akasa** is priced from the Akasa tariff alone: its rate (surcharges are already
 included) + an add-on from its OCDC sheet (origin outbound + destination inbound
