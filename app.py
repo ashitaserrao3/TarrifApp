@@ -149,7 +149,7 @@ SHEET_CSS = f"""
 .xl-table th.l {{ text-align: left; }}
 .xl-table td {{ padding: 10px 12px; border-bottom: 1px solid {LINE}; white-space: nowrap; }}
 .xl-table tbody tr:last-child td {{ border-bottom: none; }}
-.xl-table tbody tr:nth-child(even) td {{ background: {STRIPE}; }}
+.xl-table tbody:nth-of-type(even) > tr:not(.child) td {{ background: {STRIPE}; }}
 .xl-table tbody tr:hover td {{ background: {HOVER}; }}
 .xl-table td.c {{ text-align: center; }}
 .xl-table td.air {{ font-weight: 600; }}
@@ -160,6 +160,17 @@ SHEET_CSS = f"""
 .xl-table td.cpkg.lowest {{ background: {LOWEST_RED} !important; color: #9B1C31; }}
 .xl-table td.muted {{ color: #94A3B8; }}
 .xl-table sup {{ color: #9C5700; font-size: 10px; font-weight: 400; }}
+.xl-table input.tg {{ display: none; }}
+.xl-table tr.child {{ display: none; }}
+.xl-table tbody.grp:has(input.tg:checked) tr.child {{ display: table-row; }}
+.xl-table tr.child td {{ background: #FBFCFE; font-size: 13px; }}
+.xl-table tr.top label {{ cursor: pointer; display: block; }}
+.xl-table tr.top {{ cursor: pointer; }}
+.xl-table .chev {{ display: inline-block; width: 14px; color: {MUTED}; transition: transform .15s; }}
+.xl-table tbody.grp:has(input.tg:checked) .chev {{ transform: rotate(90deg); }}
+.xl-table .count {{ background: #E8EEF6; color: {NAVY}; border-radius: 999px; padding: 2px 9px; font-size: 12px;
+                    font-weight: 600; }}
+.xl-table .sub {{ color: #94A3B8; padding-left: 22px; }}
 .xl-legend {{ display: flex; flex-wrap: wrap; gap: 14px; align-items: center; color: {MUTED}; font-size: 12px;
               margin-top: 12px; }}
 .xl-legend i {{ display: inline-block; width: 14px; height: 14px; border-radius: 4px; vertical-align: -2px;
@@ -566,8 +577,7 @@ for brk in (45, 100):
     values = [cells[brk]["v"] for _, cells, _ in priced if cells[brk] and cells[brk]["v"] is not None]
     lowest[brk] = min(values) if values else None
 
-rows_html = []
-for r, cells, sp in priced:
+def flight_row(r, cells, sp, cls=""):
     f = r.flight
     if r.status == STATUS_NO_TARIFF:
         product, pcls = "No tariff", "c muted"
@@ -587,11 +597,47 @@ for r, cells, sp in priced:
             mark = f"<sup>{cell['used']}</sup>" if cell["used"] != f"{brk}+" else ""
             low = ' lowest' if cell["v"] == lowest[brk] else ""
             tds.append(f'<td class="cpkg{low}">{num(cell["v"])}{mark}</td>')
-    rows_html.append(
-        f"<tr><td class='air'><span class='dot' style='background:{AIRLINE_DOT.get(f['Airline'], MUTED)}'></span>"
-        f"{esc(f['Airline'])}</td><td class='c fno'>{esc(f['FlightNo'])}</td>"
-        f"<td class='{pcls}'>{esc(product)}{badge}</td>"
-        f"<td class='c'>{esc(f['DepTime'])}</td>{''.join(tds)}</tr>")
+    airline = ("<span class='sub'>↳</span>" if cls == "child" else
+               f"<span class='chev'></span><span class='dot' style='background:{AIRLINE_DOT.get(f['Airline'], MUTED)}'>"
+               f"</span>{esc(f['Airline'])}")
+    return (f"<tr class='{cls}'><td class='air'>{airline}</td><td class='c fno'>{esc(f['FlightNo'])}</td>"
+            f"<td class='{pcls}'>{esc(product)}{badge}</td><td class='c'>{esc(f['DepTime'])}</td>{''.join(tds)}</tr>")
+
+
+def price_range(items, brk):
+    """One group's CPKG cell: the value when all its flights share it, else 'lowest–highest'."""
+    values = sorted({cells[brk]["v"] for _, cells, _ in items if cells[brk] and cells[brk]["v"] is not None})
+    if not values:
+        return '<td class="cpkg muted">–</td>'
+    low = ' lowest' if values[0] == lowest[brk] else ""
+    text = num(values[0]) if len(values) == 1 else f"{num(values[0])}–{num(values[-1])}"
+    return f'<td class="cpkg{low}">{text}</td>'
+
+
+# Flights of the same airline with the same 100+ kg CPKG collapse into one row; click it to see each flight.
+groups = {}
+for item in priced:
+    groups.setdefault((item[0].flight["Airline"], (item[1][100] or {}).get("v")), []).append(item)
+
+rows_html = []
+for i, ((airline, _), items) in enumerate(groups.items()):
+    if len(items) == 1:
+        rows_html.append(f"<tbody>{flight_row(*items[0])}</tbody>")
+        continue
+    gid = f"grp-{origin}-{dest}-{i}"
+    products = " / ".join(dict.fromkeys(esc(r.product or "") for r, _, _ in items if r.product)) or "–"
+    times = sorted(r.flight["DepTime"] or "" for r, _, _ in items)
+    badge = ' <span class="sp" title="Akasa special rate">SPECIAL</span>' if any(sp for _, _, sp in items) else ""
+    summary = (
+        f"<tr class='top'><td class='air'><input type='checkbox' id='{gid}' class='tg'>"
+        f"<label for='{gid}'><span class='chev'>▸</span>"
+        f"<span class='dot' style='background:{AIRLINE_DOT.get(airline, MUTED)}'></span>{esc(airline)}</label></td>"
+        f"<td class='c fno'><label for='{gid}'><span class='count'>{len(items)} flights</span></label></td>"
+        f"<td class='c'><label for='{gid}'>{products}{badge}</label></td>"
+        f"<td class='c'><label for='{gid}'>{esc(times[0])} – {esc(times[-1])}</label></td>"
+        f"{price_range(items, 45)}{price_range(items, 100)}</tr>")
+    rows_html.append(f"<tbody class='grp'>{summary}"
+                     + "".join(flight_row(*it, cls="child") for it in items) + "</tbody>")
 
 route_specials = sorted((k[3], v) for k, v in (special or {"rows": {}})["rows"].items()
                         if (k[0], k[1]) == (allcargo.station(origin), allcargo.station(dest)))
@@ -612,7 +658,7 @@ if rows_html:
     <th class="cpkg" colspan="2">CPKG &nbsp;(₹/kg)</th></tr>
 <tr><th class="cpkg">45+ kg</th><th class="cpkg">100+ kg</th></tr>
   </thead>
-  <tbody>{''.join(rows_html)}</tbody>
+  {''.join(rows_html)}
 </table></div>"""
 fill, ink = STATUS_FILL[status]
 st.html(SHEET_CSS + f"""
