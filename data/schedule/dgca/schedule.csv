@@ -1,4 +1,4 @@
-# pdf-sha256: 08f872e545b3481a91fa16bedae3643a49c84669449874589b0b599e77cd47d4
+# pdf-sha256: 8b68081220b4eedae5f12d7a35ac7372ecdac09c87bf78cb983db9eff29d3cfe
 Origin,Destination,Airline,FlightNo,DepTime,Mon,Tue,Wed,Thu,Fri,Sat,Sun,EffectiveFrom,EffectiveTo,Aircraft,Operator,Season,OriginName,DestName
 IXA,CCU,AIRINDIA,IX1522,13:25,1,1,1,1,1,1,1,2026-03-29,2026-10-24,A320N,Air India Express Limited,Summer,Agartala,Kolkata
 IXA,IXB,AIRINDIA,IX2963,14:15,0,0,1,0,0,0,1,2026-04-12,2026-04-22,B737,Air India Express Limited,Summer,Agartala,Bagdogra

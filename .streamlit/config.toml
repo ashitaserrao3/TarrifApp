@@ -1,15 +1,33 @@
-[theme]
-# The app mirrors the Excel workbook, so it keeps the workbook's light look.
-base = "light"
-primaryColor = "#1F4E78"
+# App look & feel (committed to git; secrets.toml stays private)
 
 [server]
-# Rate lists are a few MB each; leave room for the schedule workbook too.
+# Rate lists are a few MB each; leave room for the schedule PDFs too.
 maxUploadSize = 100
 
 [client]
-# Visitors only see the app, not Streamlit's developer menu or "Deploy" button.
-toolbarMode = "viewer"
+toolbarMode = "minimal"        # hides the Deploy button / developer menu
+showSidebarNavigation = false
 
-[browser]
-gatherUsageStats = false
+[theme]
+base = "light"
+primaryColor = "#C8102E"       # ACL red – buttons, selected items
+backgroundColor = "#F5F7FB"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#0F1B33"
+linkColor = "#1D4E89"
+borderColor = "#E5E9F0"
+dataframeBorderColor = "#E5E9F0"
+showWidgetBorder = true
+baseRadius = "10px"
+baseFontSize = 15
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFontWeights = [700, 650, 600, 600, 600, 600]
+headingFontSizes = ["2rem", "1.5rem", "1.2rem", "1.05rem", "1rem", "0.9rem"]
+
+[theme.sidebar]
+backgroundColor = "#CDE7FA"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#334155"
+primaryColor = "#C8102E"
+borderColor = "#A9D3F2"

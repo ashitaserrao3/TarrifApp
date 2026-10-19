@@ -359,10 +359,21 @@ class TariffEngine:
             self._batches[carrier] = dict(r) if r else None
         return self._batches[carrier]
 
+    def batches(self, carrier):
+        """Every rate file of the carrier in force on as_of, newest first."""
+        return [dict(r) for r in self.conn.execute(
+            "SELECT * FROM LoadBatches WHERE Carrier = ? AND Status = 'OK' "
+            "AND (EffectiveDate IS NULL OR substr(EffectiveDate, 1, 10) <= ?) "
+            "ORDER BY EffectiveDate DESC, BatchID DESC", (carrier, self.as_of.isoformat()))]
+
     def _lane_rows(self, carrier, origin, dest):
+        """Rate rows for a lane. The newest file in force wins for every line it has; an older file only
+        fills in the lines (product + flight condition) the newer files don't have, so a file holding just
+        the changed lines updates those lines and leaves the rest as they were."""
         if (carrier, origin) not in self._loaded:
-            b = self.batch(carrier)
-            if b:
+            seen = set()
+            for b in self.batches(carrier):
+                lines = {}
                 for product in GENERAL_PRODUCTS[carrier]:
                     table = f"{TABLE_PREFIX[carrier]}_{product}"
                     for r in self.conn.execute(
@@ -370,9 +381,15 @@ class TariffEngine:
                             f"AND (ApplicableCommodity IS NULL OR TRIM(ApplicableCommodity) = '') "
                             f"ORDER BY RateID", (b["BatchID"], origin)):
                         d = dict(r)
+                        line = (d["DestCode"], product, re.sub(r"\s+", " ", str(d.get(CONDITION_COL[carrier]) or ""))
+                                .strip().upper())
+                        if line in seen:
+                            continue
                         d["_Product"] = product
                         d["_Condition"] = parse_condition(d.get(CONDITION_COL[carrier]))
+                        lines[line] = True
                         self._rows.setdefault((carrier, origin, d["DestCode"]), []).append(d)
+                seen |= lines.keys()
             self._loaded.add((carrier, origin))
         return self._rows.get((carrier, origin, dest), [])
 

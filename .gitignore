@@ -1,12 +1,16 @@
 __pycache__/
 *.pyc
+*.pyc.*
+.streamlit/secrets.toml
+secrets.toml
+config.yaml
+outputs/
+.DS_Store
+!.streamlit/config.toml
+
+# The database built from the data folder
 instance/
-.venv/
-venv/
-.pytest_cache/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
-
-# Admin password - never commit
-.streamlit/secrets.toml
+.pytest_cache/
