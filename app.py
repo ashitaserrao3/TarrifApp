@@ -54,22 +54,51 @@ authenticator = stauth.Authenticate(
 # LOGIN SCREEN
 # =====================================================
 
+LOGIN_CSS = """
+<style>
+.stApp { background: radial-gradient(1200px 600px at 15% 10%, rgba(46,116,181,.55), transparent 60%),
+                      radial-gradient(900px 500px at 90% 90%, rgba(200,16,46,.18), transparent 60%),
+                      linear-gradient(135deg, #0F2A44, #1F4E78 55%, #2E74B5); }
+[data-testid="stHeader"] { background: transparent; }
+.st-key-login_card { background: #fff; border-radius: 18px; padding: 30px 30px 22px; margin-top: 9vh;
+                     box-shadow: 0 24px 60px rgba(8, 24, 44, .35); }
+.st-key-login_card [data-testid="stForm"] { border: none; padding: 0; }
+.st-key-login_card [data-testid="stForm"] h1, .st-key-login_card [data-testid="stForm"] h2,
+.st-key-login_card [data-testid="stForm"] h3 { display: none; }
+.st-key-login_card input { min-height: 42px; }
+.st-key-login_card [class*="st-key-FormSubmitter"], .st-key-login_card [class*="st-key-FormSubmitter"] > div,
+.st-key-login_card [data-testid="stFormSubmitButton"] { width: 100% !important; }
+.st-key-login_card [data-testid="stFormSubmitButton"] button { width: 100%; min-height: 44px; border: none;
+  border-radius: 10px; background: #1F4E78; color: #fff; font-weight: 600; letter-spacing: .02em; }
+.st-key-login_card [data-testid="stFormSubmitButton"] button:hover { background: #16324F; color: #fff; }
+.login-foot { text-align: center; color: rgba(255,255,255,.75); font-size: 12px; margin-top: 18px;
+              font-family: Inter, system-ui, sans-serif; letter-spacing: .04em; }
+</style>
+"""
+
+LOGIN_HEAD = """<div style="text-align:center;font-family:Inter,system-ui,sans-serif;margin-bottom:6px">
+<div style="width:58px;height:58px;border-radius:50%;margin:0 auto 12px;display:flex;align-items:center;
+  justify-content:center;font-size:28px;color:#fff;background:linear-gradient(135deg,#16324F,#2E74B5);
+  box-shadow:0 8px 20px rgba(31,78,120,.35)">✈</div>
+<div style="font-size:23px;font-weight:700;color:#0F1B33">Welcome back</div>
+<div style="color:#64748B;font-size:14px;margin-top:4px">Sign in to see today's air cargo rates</div></div>"""
+
 if not st.session_state.get("authentication_status"):
-    _, mid, _ = st.columns([1, 1.1, 1])
+    st.html(LOGIN_CSS)
+    _, mid, _ = st.columns([1, 1.05, 1])
     with mid:
-        st.html("""<div style="text-align:center;margin:8vh 0 18px;font-family:Inter,system-ui,sans-serif">
-<div style="font-size:40px">✈</div>
-<div style="font-size:24px;font-weight:700;color:#1F4E78;letter-spacing:.06em">FLIGHT SCHEDULE</div>
-<div style="color:#64748B;font-size:14px;margin-top:4px">Sign in to see today's air cargo rates</div></div>""")
-        try:
-            authenticator.login(
-                fields={"Form name": "Sign in", "Username": "Username",
-                        "Password": "Password", "Login": "Sign in"},
-            )
-        except Exception as e:
-            st.error(e)
-        if st.session_state.get("authentication_status") is False:
-            st.error("Username or password is incorrect", icon="🔒")
+        with st.container(key="login_card"):
+            st.html(LOGIN_HEAD)
+            try:
+                authenticator.login(
+                    fields={"Form name": "Sign in", "Username": "Username",
+                            "Password": "Password", "Login": "Sign in"},
+                )
+            except Exception as e:
+                st.error(e)
+            if st.session_state.get("authentication_status") is False:
+                st.error("Username or password is incorrect", icon="🔒")
+        st.html('<div class="login-foot">✈ FLIGHT SCHEDULE · Air cargo CPKG by route</div>')
 
     if st.session_state.get("authentication_status"):
         st.rerun()  # signed in (or remembered) -> show the flight schedule
