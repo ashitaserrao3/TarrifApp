@@ -275,17 +275,14 @@ def cloud():
 
 @st.cache_resource(show_spinner="Loading the latest published tariffs…")
 def restore_published():
-    """Once per app start: bring back the tariffs last published to Supabase. -> error message or None"""
+    """Once per app start: bring back the tariffs last published to Supabase. A failure raises, so it isn't
+    cached and the next page view tries again (e.g. once a paused Supabase project is restored)."""
     store = cloud()
     if store is None:
-        return None
-    try:
-        files = {k: v for k, v in store.download().items() if k.startswith("rates/") and k.count("/") == 1}
-    except Exception as e:  # noqa: BLE001 - the app still runs on the tariffs in the repo
-        return f"Couldn't load the published tariffs from Supabase: {e}"
+        return
+    files = {k: v for k, v in store.download().items() if k.startswith("rates/") and k.count("/") == 1}
     if files:
         use_rates(files)
-    return None
 
 
 def data_signature():
@@ -331,7 +328,11 @@ def load_extras(signature):
 ss = st.session_state
 today = dt.date.today()
 
-restore_error = restore_published()
+try:
+    restore_published()
+    restore_error = None
+except Exception as e:  # noqa: BLE001 - the app still runs on the tariffs in the repo
+    restore_error = f"Couldn't reach Supabase, so the last published tariffs aren't loaded: {e}"
 signature = data_signature()
 db_path, sync_result = build_database(signature)
 quote, special, ocdc, extras_errors = load_extras(signature)
