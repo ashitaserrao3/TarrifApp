@@ -11,6 +11,7 @@ Needs in Streamlit Secrets (see secrets.toml.example):
 
 import io
 import os
+import re
 import zipfile
 
 import requests
@@ -20,7 +21,9 @@ OBJECT = os.environ.get("SUPABASE_OBJECT", "published-tariffs.zip")
 
 class SupabaseStore:
     def __init__(self, url, key, bucket="tariffs", obj=OBJECT):
-        self.url = f"{url.rstrip('/')}/storage/v1/object/{bucket}/{obj}"
+        # Accept the project URL also as copied with an API path, e.g. https://x.supabase.co/rest/v1/
+        base = re.sub(r"/(rest|storage)/v1(/.*)?$", "", url.strip().rstrip("/"))
+        self.url = f"{base}/storage/v1/object/{bucket.strip()}/{obj}"
         self.headers = {"apikey": key, "Authorization": f"Bearer {key}"}
 
     def download(self):
