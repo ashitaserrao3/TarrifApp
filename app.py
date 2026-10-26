@@ -643,7 +643,7 @@ for i, ((airline, _), items) in enumerate(groups.items()):
 route_specials = sorted((k[3], v) for k, v in (special or {"rows": {}})["rows"].items()
                         if (k[0], k[1]) == (allcargo.station(origin), allcargo.station(dest)))
 special_msg = ""
-if route_specials and status == "ACTIVE":
+if route_specials and any(sp for _, _, sp in priced):  # only when an Akasa flight here gets it
     special_msg = ("★&nbsp; Akasa special rate on this route: "
                    + " · ".join(f"{category(cat)} flights {num(v['ssp'])} (Direct AWB +100, plus add-on)"
                                 for cat, v in route_specials))
