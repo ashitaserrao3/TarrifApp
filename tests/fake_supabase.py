@@ -9,7 +9,7 @@ KEY = "test-secret-key"
 
 class FakeSupabase:
     def __init__(self, port=0):
-        self.objects, self.uploads = {}, 0
+        self.objects, self.uploads, self.buckets = {}, 0, {"tariffs"}
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -25,7 +25,7 @@ class FakeSupabase:
             def do_GET(self):
                 if not self._ok():
                     return self._send(400, {"statusCode": "403", "error": "Unauthorized", "message": "Invalid key"})
-                if "/tariffs/" not in self.path:
+                if self.path.split("/")[4] not in fake.buckets:
                     return self._send(400, {"statusCode": "404", "error": "Bucket not found",
                                             "message": "Bucket not found"})
                 if self.path not in fake.objects:
@@ -36,6 +36,16 @@ class FakeSupabase:
                 data = self.rfile.read(int(self.headers["Content-Length"]))
                 if not self._ok():
                     return self._send(400, {"statusCode": "403", "error": "Unauthorized", "message": "Invalid key"})
+                if self.path == "/storage/v1/bucket":
+                    name = json.loads(data)["id"]
+                    if name in fake.buckets:
+                        return self._send(400, {"statusCode": "409", "error": "Duplicate",
+                                                "message": "The resource already exists"})
+                    fake.buckets.add(name)
+                    return self._send(200, {"name": name})
+                if self.path.split("/")[4] not in fake.buckets:
+                    return self._send(400, {"statusCode": "404", "error": "Bucket not found",
+                                            "message": "Bucket not found"})
                 if self.path in fake.objects and self.headers.get("x-upsert") != "true":
                     return self._send(400, {"statusCode": "409", "error": "Duplicate"})
                 fake.objects[self.path] = data

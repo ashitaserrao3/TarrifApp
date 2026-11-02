@@ -26,9 +26,19 @@ def test_wrong_key_is_reported(supabase):
         supabase_store.SupabaseStore(supabase.url, "wrong").download()
 
 
-def test_missing_bucket_is_reported_not_taken_as_empty(supabase):
-    with pytest.raises(RuntimeError, match="Bucket not found"):
-        supabase_store.SupabaseStore(supabase.url, KEY, bucket="tarifs").download()
+def test_missing_bucket_is_created_on_first_run(supabase):
+    supabase.buckets.clear()  # brand-new Supabase project
+    store = supabase_store.SupabaseStore(supabase.url, KEY)
+    assert store.download() == {}
+    assert "tariffs" in supabase.buckets
+    store.upload({"rates/a.xlsx": b"a"})
+    assert store.download() == {"rates/a.xlsx": b"a"}
+
+
+def test_missing_bucket_on_upload_is_created(supabase):
+    supabase.buckets.clear()
+    supabase_store.SupabaseStore(supabase.url, KEY).upload({"rates/a.xlsx": b"a"})
+    assert supabase.uploads == 1 and "tariffs" in supabase.buckets
 
 
 def test_project_url_copied_with_an_api_path_still_works(supabase):
